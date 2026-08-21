@@ -82,6 +82,7 @@ def init_db():
             url TEXT DEFAULT '',
             summary TEXT DEFAULT '',
             description TEXT DEFAULT '',
+            image TEXT DEFAULT '',
             relevance INTEGER DEFAULT 3,
             tags TEXT DEFAULT '[]',
             collected_at TEXT DEFAULT '',
@@ -111,6 +112,19 @@ def init_db():
         'CREATE INDEX IF NOT EXISTS idx_intel_industry ON intelligence(industry)',
     ]:
         cur.execute(sql)
+
+    # 兼容老库：补充 image 字段
+    try:
+        if PG:
+            cur.execute("ALTER TABLE intelligence ADD COLUMN IF NOT EXISTS image TEXT DEFAULT ''")
+        else:
+            cur.execute("PRAGMA table_info(intelligence)")
+            cols = [r[1] for r in cur.fetchall()]
+            if 'image' not in cols:
+                cur.execute("ALTER TABLE intelligence ADD COLUMN image TEXT DEFAULT ''")
+    except Exception as e:
+        database_log = None  # 迁移失败不应阻塞启动
+
     conn.commit()
     conn.close()
     backup_db()
@@ -192,10 +206,10 @@ def add_intelligence(item):
         (title, url))
     if exist:
         return False
-    placeholders = ','.join([PH] * 11)
+    placeholders = ','.join([PH] * 12)
     execute('''
         INSERT INTO intelligence
-        (date, vendor, industry, title, source, url, summary, description, relevance, tags, collected_at)
+        (date, vendor, industry, title, source, url, summary, description, image, relevance, tags, collected_at)
         VALUES (''' + placeholders + ''')''', (
         item.get('date', today_str()),
         item.get('vendor', ''),
@@ -205,6 +219,7 @@ def add_intelligence(item):
         item.get('url', ''),
         item.get('summary', ''),
         item.get('description', ''),
+        item.get('image', ''),
         int(item.get('relevance', 3)),
         json.dumps(item.get('tags', []), ensure_ascii=False),
         now_str(),
