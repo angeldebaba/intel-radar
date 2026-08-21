@@ -306,12 +306,20 @@ def fetch_sogou_web(query, max_results=8):
         database.log('collect', '搜狗网页触发验证: {}'.format(query), 'warn')
         return items
 
-    # 搜狗结果一般在 h3 a
-    results = re.findall(r'<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', text, re.S)
+    # 搜狗结果：容器内 h3 a 为标题，摘要取常见摘要节点或容器文本
+    soup = BeautifulSoup(text, 'html.parser')
+    containers = soup.select('div.vrwrap, div.rb, div.results > div')
     skipped = 0
-    for link, title in results[:max_results * 2]:
-        title = _clean_text(title)
+    for c in containers[:max_results * 3]:
+        a = c.select_one('h3 a') or c.select_one('.vr-title a')
+        if not a:
+            continue
+        title = _clean_text(a.get_text())
         if not title or len(title) < 10:
+            skipped += 1
+            continue
+        link = a.get('href', '')
+        if not link:
             skipped += 1
             continue
         if not link.startswith('http'):
@@ -324,11 +332,22 @@ def fetch_sogou_web(query, max_results=8):
         if any(d in real_url for d in LOW_QUALITY):
             skipped += 1
             continue
+        # 提取摘要：优先摘要节点，其次容器文本去掉标题
+        sum_el = c.select_one('.space-txt, .str-text-info, .str_info, .text-layout, .fz-mid')
+        if sum_el:
+            summary = _clean_text(sum_el.get_text())
+        else:
+            summary = _clean_text(c.get_text()).replace(title, '').strip()[:200]
+        # 提取相对时间（如 "3小时前"、"2026-08-20"）
+        published = ''
+        time_el = c.select_one('.str_timeyin, .str-time, .vr-title ~ .citeurl, span[class*=time]')
+        if time_el:
+            published = _extract_date(_clean_text(time_el.get_text()))
         items.append({'title': title, 'url': real_url, 'source': '搜狗',
-                      'published': '', 'summary': ''})
+                      'published': published, 'summary': summary[:200]})
         if len(items) >= max_results:
             break
-    database.log('collect', '搜狗[{}] 原始结果{}条 跳过{}条 有效{}条'.format(query, len(results), skipped, len(items)), 'ok')
+    database.log('collect', '搜狗[{}] 原始结果{}条 跳过{}条 有效{}条'.format(query, len(containers), skipped, len(items)), 'ok')
     return items
 
 
@@ -836,7 +855,7 @@ def collect_once():
         for kw in vendor['keywords']:
             vendor_queries.append((vendor['name'], kw))
     industry_queries = [(q, '') for q in config.INDUSTRY_QUERIES]
-    total_steps = len(config.OFFICIAL_CONFIG) + len(vendor_queries) + len(industry_queries)
+    total_steps = len(OFFICIAL_CONFIG) + len(vendor_queries) + len(industry_queries)
 
     _update_progress(running=True, total=total_steps, done=0, added=0,
                      errors=0, current='', finished_at='')
@@ -877,12 +896,14 @@ def collect_once():
                 added += 1
 
     # 阶段 A：逐个厂商抓官网
+    official_counts = {}
     for cfg in OFFICIAL_CONFIG:
         vendor_name = cfg['vendor']
         _update_progress(done=step, current='官网:{}'.format(vendor_name))
         step += 1
         try:
             items = fetch_vendor_official(vendor_name, max_results=config.MAX_PER_QUERY)
+            official_counts[vendor_name] = len(items)
             _add_items(items, vendor_name)
         except Exception as e:
             errors += 1
@@ -890,9 +911,12 @@ def collect_once():
         time.sleep(random.uniform(2.0, 4.0))
 
     # 阶段 B：搜索引擎补充（厂商关键词）
+    # 效率优化：官网已采够 MAX_PER_QUERY 条的厂商跳过搜索引擎补充
     for vendor_name, query in vendor_queries:
         _update_progress(done=step, current=query)
         step += 1
+        if official_counts.get(vendor_name, 0) >= config.MAX_PER_QUERY:
+            continue
         try:
             items = fetch_query(query, vendor_name=vendor_name, max_results=config.MAX_PER_QUERY,
                                 use_official=False, use_search=True)
@@ -900,7 +924,7 @@ def collect_once():
         except Exception as e:
             errors += 1
             database.log('collect', '查询失败: {} | {}'.format(query, e), 'warn')
-        time.sleep(random.uniform(3.0, 5.0))
+        time.sleep(random.uniform(2.0, 3.5))
 
     # 阶段 C：搜索引擎补充（行业关键词，不带厂商）
     for query, _ in industry_queries:
@@ -913,7 +937,7 @@ def collect_once():
         except Exception as e:
             errors += 1
             database.log('collect', '查询失败: {} | {}'.format(query, e), 'warn')
-        time.sleep(random.uniform(3.0, 5.0))
+        time.sleep(random.uniform(2.0, 3.5))
 
     _update_progress(running=False, done=total_steps, added=added,
                      errors=errors, current='', finished_at=database.now_str())
