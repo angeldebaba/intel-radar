@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup  # 使用标准库 html.parser，无需 lxml
 
 import config
 import database
+import ai
 
 # 更完整的浏览器请求头，模拟真实 Chrome
 BASE_HEADERS = {
@@ -902,19 +903,48 @@ def collect_once():
 
     def _add_items(items, vendor_name):
         nonlocal added
+        # 第一步：基础清洗与去重，得到候选列表
+        candidates = []
         for it in items:
-            title = it.get('title', '').strip()
-            url = it.get('url', '').strip()
+            title = (it.get('title') or '').strip()
+            url = (it.get('url') or '').strip()
             if not title or not url:
                 continue
             if url in url_seen or title in title_seen:
                 continue
             url_seen.add(url)
             title_seen.add(title)
+            candidates.append(it)
+        if not candidates:
+            return
 
-            industry = detect_industry(title, it.get('summary', ''))
-            rel = score_relevance(title, it.get('summary', ''))
-            tags = detect_tags(title, it.get('summary', ''))
+        # 第二步：AI 批量提炼与过滤（无 Key / 调用失败返回 None，降级为关键词逻辑）
+        ai_results = ai.analyze_batch(candidates)
+
+        # 第三步：逐条入库
+        for idx, it in enumerate(candidates):
+            title = (it.get('title') or '').strip()
+            url = (it.get('url') or '').strip()
+            raw_summary = it.get('summary') or ''
+
+            r = ai_results[idx] if ai_results else None
+            if r is not None and r.get('score', -1) >= 0:
+                # AI 判定：低于阈值丢弃（内容与主题对不上）
+                if (not r.get('keep', True)) or r['score'] < config.AI_MIN_SCORE:
+                    database.log('collect',
+                                 'AI过滤丢弃[{}分]: {}'.format(r['score'], title[:45]), 'ok')
+                    continue
+                ai_summary = (r.get('summary') or '').strip()
+                summary = ai_summary if ai_summary else raw_summary[:200]
+                rel = max(1, r['score'])
+                tags = r.get('tags') or detect_tags(title, raw_summary)
+            else:
+                # 降级：原关键词逻辑
+                summary = raw_summary[:200]
+                rel = score_relevance(title, raw_summary)
+                tags = detect_tags(title, raw_summary)
+
+            industry = detect_industry(title, raw_summary)
 
             # 缩略图：异步抓文章页 og:image（前3条用同步，避免拖慢整体）
             if not it.get('image') and added < 3:
@@ -927,8 +957,8 @@ def collect_once():
                 'title': title,
                 'source': it.get('source', ''),
                 'url': url,
-                'summary': (it.get('summary') or '')[:200],
-                'description': it.get('summary', ''),
+                'summary': summary,
+                'description': raw_summary,
                 'image': it.get('image', ''),
                 'relevance': rel,
                 'tags': tags,
