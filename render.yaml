@@ -1,0 +1,31 @@
+# Render Blueprint：一次点击创建 Web 服务 + 免费 PostgreSQL
+# 使用方式：Render 控制台 → New + → Blueprint → 选择本仓库 → 填两个环境变量 → Apply
+
+services:
+  - type: web
+    name: intel-radar
+    runtime: python
+    plan: free
+    region: singapore            # 新加坡节点，国内访问最快
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:${PORT:-5000} --timeout 120 --workers 2
+    healthCheckPath: /api/stats
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: intel-radar-db
+          property: connectionString
+      - key: ADMIN_PASSWORD
+        sync: false              # 部署时手动填写（后台管理登录密码）
+      - key: PUSHPLUS_TOKEN
+        sync: false              # 部署时手动填写（微信推送token，可选）
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+
+databases:
+  - name: intel-radar-db
+    plan: free
+    region: singapore            # 与 Web 服务同区，降低延迟
+    databaseName: intel_radar
+    user: intel_radar
