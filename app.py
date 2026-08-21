@@ -97,7 +97,7 @@ def api_stats_trend():
 
 @app.route('/api/intelligence')
 def api_intelligence():
-    """情报列表，支持 date/vendor/industry/tag/relevance/fav 过滤"""
+    """情报列表，支持 date/vendor/industry/tag/relevance/fav/q 过滤 + 分页"""
     where, args = [], []
     d = request.args.get('date') or database.today_str()
     vendor = request.args.get('vendor', '')
@@ -127,12 +127,28 @@ def api_intelligence():
         where.append('(title LIKE ? OR summary LIKE ?)')
         args.extend(['%{}%'.format(keyword)] * 2)
 
+    # 分页
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except ValueError:
+        page = 1
+    try:
+        page_size = min(100, max(1, int(request.args.get('page_size', 12))))
+    except ValueError:
+        page_size = 12
+    offset = (page - 1) * page_size
+    where_sql = ' AND '.join(where)
+
+    total = database.query_one(
+        'SELECT COUNT(*) AS c FROM intelligence WHERE ' + where_sql, tuple(args))['c']
     rows = database.query(
-        'SELECT * FROM intelligence WHERE {} ORDER BY relevance DESC, id DESC LIMIT 200'
-        .format(' AND '.join(where)), tuple(args))
+        'SELECT * FROM intelligence WHERE {} ORDER BY relevance DESC, id DESC LIMIT {} OFFSET {}'
+        .format(where_sql, page_size, offset), tuple(args))
     for r in rows:
         r['tags'] = json.loads(r['tags'] or '[]')
-    return jsonify({'ok': True, 'data': rows})
+    return jsonify({'ok': True, 'data': rows, 'page': page,
+                    'page_size': page_size, 'total': total,
+                    'total_pages': max(1, (total + page_size - 1) // page_size)})
 
 
 @app.route('/api/filters')
