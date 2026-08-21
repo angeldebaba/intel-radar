@@ -190,6 +190,7 @@ def admin_dahua_add():
         VALUES (?,?,?,?)
     ''', (data.get('category', ''), name, data.get('description', ''),
           database.now_str()))
+    database.backup_db()
     return jsonify({'ok': True, 'id': iid})
 
 
@@ -197,6 +198,7 @@ def admin_dahua_add():
 @require_admin
 def admin_dahua_delete(iid):
     database.execute('DELETE FROM dahua_features WHERE id=?', (iid,))
+    database.backup_db()
     return jsonify({'ok': True})
 
 
@@ -223,6 +225,7 @@ def admin_dahua_import_text():
             VALUES (?,?,?,?)
         ''', (cat, name, desc, database.now_str()))
         count += 1
+    database.backup_db()
     return jsonify({'ok': True, 'count': count})
 
 
@@ -320,6 +323,8 @@ def _run_collect():
     except Exception as e:
         collector.PROGRESS['running'] = False
         database.log('collect', '采集线程异常: {}'.format(e), 'error')
+    finally:
+        database.backup_db()
 
 
 @app.route('/api/admin/collect-status')
@@ -342,6 +347,7 @@ def admin_diagnose():
 @require_admin
 def admin_push_test():
     ok, msg = pusher.push_manual()
+    database.backup_db()
     return jsonify({'ok': ok, 'msg': msg})
 
 
@@ -349,6 +355,7 @@ def admin_push_test():
 @require_admin
 def admin_push_now():
     ok, msg = pusher.push_daily_top()
+    database.backup_db()
     return jsonify({'ok': ok, 'msg': msg})
 
 
@@ -372,6 +379,7 @@ def admin_settings_save():
     for key in ('pushplus_token', 'coll_time', 'push_time', 'push_top_n'):
         if key in data:
             database.set_config(key, data[key])
+    database.backup_db()
     # 热更新调度
     _reschedule()
     return jsonify({'ok': True})

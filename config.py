@@ -8,10 +8,15 @@ DEBUG = os.environ.get('DEBUG', '1') == '1'
 HOST = os.environ.get('HOST', '0.0.0.0')
 PORT = int(os.environ.get('PORT', 5000))
 
-# 数据库路径（默认在项目 data 目录，可用环境变量覆盖）
+# 数据库路径：SQLite 必须放在容器本地盘，不能放在对象存储挂载目录上
+# （对象存储 FUSE 挂载不支持 SQLite 文件锁，会报 disk I/O error）
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get('DATA_DIR', os.path.join(BASE_DIR, 'data'))
+DATA_DIR = os.environ.get('DATA_DIR', '/tmp/radar_data')
 DB_PATH = os.path.join(DATA_DIR, 'radar.db')
+
+# 备份目录：对象存储挂载路径，用于容器重启后恢复数据
+# CloudBase 对象存储通常挂载到 /mnt/ 或 /data/，按实际挂载填写
+BACKUP_DIR = os.environ.get('BACKUP_DIR', '')
 
 # ===== 后台管理 =====
 # 后台密码（部署时务必通过环境变量 ADMIN_PASSWORD 覆盖！）

@@ -22,11 +22,48 @@ def get_conn():
         conn.autocommit = True
         return conn
     os.makedirs(config.DATA_DIR, exist_ok=True)
+    restore_from_backup()
     import sqlite3
     conn = sqlite3.connect(config.DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA journal_mode=WAL')
+    # 对象存储挂载不支持 WAL 的多文件读写，使用普通日志模式
+    conn.execute('PRAGMA journal_mode=DELETE')
     return conn
+
+
+def restore_from_backup():
+    """启动时从对象存储挂载目录恢复数据库备份"""
+    if PG or not config.BACKUP_DIR:
+        return
+    try:
+        os.makedirs(config.BACKUP_DIR, exist_ok=True)
+        backup_path = os.path.join(config.BACKUP_DIR, 'radar.db')
+        if not os.path.exists(backup_path) or os.path.getsize(backup_path) == 0:
+            return
+        # 本地无数据库，或备份比本地新/大，则恢复
+        if (not os.path.exists(config.DB_PATH) or
+                os.path.getsize(backup_path) > os.path.getsize(config.DB_PATH)):
+            import shutil
+            shutil.copy2(backup_path, config.DB_PATH)
+    except Exception:
+        pass
+
+
+def backup_db():
+    """把 SQLite 数据库备份到对象存储挂载目录，容器重启后可恢复"""
+    if PG or not config.BACKUP_DIR:
+        return
+    try:
+        os.makedirs(config.BACKUP_DIR, exist_ok=True)
+        import sqlite3
+        import shutil
+        # 先 checkpoint，确保 WAL 合并到主库（即使当前不是 WAL 模式也安全）
+        conn = sqlite3.connect(config.DB_PATH, timeout=10)
+        conn.execute('PRAGMA wal_checkpoint(FULL)')
+        conn.close()
+        shutil.copy2(config.DB_PATH, os.path.join(config.BACKUP_DIR, 'radar.db'))
+    except Exception:
+        pass
 
 
 def init_db():
@@ -76,6 +113,7 @@ def init_db():
         cur.execute(sql)
     conn.commit()
     conn.close()
+    backup_db()
 
 
 def query(sql, args=()):
@@ -169,6 +207,7 @@ def add_intelligence(item):
         json.dumps(item.get('tags', []), ensure_ascii=False),
         now_str(),
     ))
+    backup_db()
     return True
 
 
@@ -176,6 +215,7 @@ def log(action, detail='', status='ok'):
     execute('INSERT INTO collect_log(date, action, detail, status, created_at) VALUES ('
             + PH + ',' + PH + ',' + PH + ',' + PH + ',' + PH + ')',
             (today_str(), action, detail, status, now_str()))
+    backup_db()
 
 
 def stats():
