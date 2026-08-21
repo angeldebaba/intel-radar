@@ -729,13 +729,24 @@ function runDiagnose(){
 }
 
 function loadLogs(){
+  var el=document.getElementById('logList');
+  el.innerHTML='<div style="color:var(--text3);padding:10px;">加载中...</div>';
   api('/api/admin/logs').then(function(res){
-    if(!res.ok) return;
-    var el=document.getElementById('logList');
-    el.innerHTML=res.data.map(function(l){
-      return '<div class="log-line"><span class="lt">'+l.created_at+'</span><span class="st '+l.status+'">'+
-        (l.action==='collect'?'采集':(l.action==='push'?'推送':l.action))+'</span><span>'+esc(l.detail)+'</span></div>';
+    if(!res.ok){
+      el.innerHTML='<div style="color:var(--red);padding:10px;">加载失败：'+(res.error||'未知错误')+'</div>';
+      return;
+    }
+    var data=res.data||[];
+    if(!Array.isArray(data)){
+      el.innerHTML='<div style="color:var(--red);padding:10px;">日志格式异常</div>';
+      return;
+    }
+    el.innerHTML=data.map(function(l){
+      return '<div class="log-line"><span class="lt">'+(l.created_at||'')+'</span><span class="st '+(l.status||'ok')+'">'+
+        (l.action==='collect'?'采集':(l.action==='push'?'推送':(l.action||'其他')))+'</span><span>'+esc(l.detail||'')+'</span></div>';
     }).join('') || '<div style="color:var(--text3);padding:10px;">暂无日志</div>';
+  }).catch(function(e){
+    el.innerHTML='<div style="color:var(--red);padding:10px;">请求异常：'+(e&&e.message?e.message:'网络错误')+'</div>';
   });
 }
 

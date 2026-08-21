@@ -380,8 +380,12 @@ def admin_settings_save():
 @app.route('/api/admin/logs')
 @require_admin
 def admin_logs():
-    rows = database.query('SELECT * FROM collect_log ORDER BY id DESC LIMIT 30')
-    return jsonify({'ok': True, 'data': rows})
+    try:
+        rows = database.query('SELECT * FROM collect_log ORDER BY id DESC LIMIT 30')
+        return jsonify({'ok': True, 'data': rows})
+    except Exception as e:
+        database.log('system', '读取日志失败: {}'.format(e), 'error')
+        return jsonify({'ok': False, 'error': '读取日志失败: {}'.format(e)}), 500
 
 
 # ==================== 调度器 ====================
