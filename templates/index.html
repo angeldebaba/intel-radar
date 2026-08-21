@@ -42,25 +42,29 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .stat-chip b{color:var(--text);margin:0 2px;}
 
 /* ===== 筛选栏 ===== */
-.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;}
-.filters select,.filters input[type=text]{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;min-width:110px;}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;}
+.filters select,.filters input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12.5px;font-family:inherit;outline:none;min-width:0;flex:1 1 110px;max-width:160px;}
 .filters select:focus,.filters input:focus{border-color:var(--blue);}
-.filters input[type=text]{flex:1;min-width:140px;max-width:280px;}
-.filters .f-label{color:var(--text3);font-size:12px;}
-.filter-clear{background:none;border:1px dashed var(--border);color:var(--text2);padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;}
+.filters input[type=text]{flex:1 1 160px;min-width:140px;max-width:220px;}
+.filters .f-label{color:var(--text3);font-size:12px;margin-right:4px;flex-shrink:0;font-weight:500;}
+.filter-clear{background:none;border:1px dashed var(--border);color:var(--text2);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0;}
 .filter-clear:hover{color:var(--blue);border-color:var(--blue);}
 
 /* ===== 情报卡片 ===== */
-.intel-grid{display:grid;grid-template-columns:1fr;gap:12px;}
-@media(min-width:768px){.intel-grid{grid-template-columns:1fr 1fr;}}
-@media(min-width:1024px){.intel-grid{grid-template-columns:1fr 1fr 1fr;}}
-.intel-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;transition:border-color .15s, transform .15s;}
+.intel-grid{display:grid;grid-template-columns:1fr;gap:14px;}
+@media(min-width:768px){.intel-grid{grid-template-columns:1fr;}}
+@media(min-width:1100px){.intel-grid{grid-template-columns:1fr 1fr;}}
+.intel-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s, transform .15s;}
 .intel-card:hover{border-color:#3d4754;transform:translateY(-1px);}
+.intel-card.has-image{flex-direction:row;gap:16px;align-items:flex-start;}
+.intel-card.has-image .card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;}
+.card-thumb{width:180px;height:120px;border-radius:8px;object-fit:cover;background:var(--bg3);flex-shrink:0;display:block;}
+@media(max-width:600px){.intel-card.has-image{flex-direction:column;}.card-thumb{width:100%;height:160px;}}
 .card-top{display:flex;align-items:flex-start;gap:10px;}
 .card-badge{display:flex;flex-direction:column;align-items:center;min-width:34px;gap:2px;}
 .rel-stars{color:var(--orange);font-size:11px;letter-spacing:-1px;white-space:nowrap;}
 .rel-num{color:var(--text3);font-size:10px;}
-.card-title{font-size:14.5px;font-weight:600;line-height:1.45;flex:1;}
+.card-title{font-size:15px;font-weight:600;line-height:1.5;flex:1;}
 .card-title a{color:var(--text);}
 .card-title a:hover{color:var(--blue);}
 .fav-btn{background:none;border:none;font-size:17px;cursor:pointer;color:var(--text3);padding:2px 4px;transition:all .15s;flex-shrink:0;}
@@ -72,7 +76,13 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .chip-industry{background:rgba(57,197,207,.13);color:#5fd4dd;}
 .chip-tag{background:rgba(188,140,255,.13);color:#cba8ff;}
 .chip-src{background:var(--bg3);color:var(--text2);}
-.card-summary{color:var(--text2);font-size:12.5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.card-summary{color:var(--text2);font-size:13px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;}
+.pagination{display:flex;justify-content:center;align-items:center;gap:6px;margin:18px 0 8px;flex-wrap:wrap;}
+.pagination button{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;transition:all .15s;font-family:inherit;}
+.pagination button:hover:not(:disabled){border-color:var(--blue);color:var(--blue);}
+.pagination button.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+.pagination button:disabled{opacity:.4;cursor:not-allowed;}
+.pagination .pg-info{color:var(--text3);font-size:12px;padding:0 8px;}
 .card-summary.expanded{-webkit-line-clamp:unset;}
 .card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;border-top:1px solid rgba(48,54,61,.5);}
 .card-foot .date{color:var(--text3);font-size:11.5px;}
@@ -209,19 +219,6 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <div class="stats" id="statsBar"></div>
   </div>
 
-  <!-- 趋势仪表盘 -->
-  <div class="dash-grid" id="dashGrid">
-    <div class="dash-card">
-      <h3>📈 近 7 日采集趋势</h3>
-      <div id="chartTrend"><div class="empty-mini">暂无数据</div></div>
-    </div>
-    <div class="dash-card">
-      <h3>🏢 厂商情报分布 <span class="hint" style="font-weight:400">累计 Top 12</span></h3>
-      <div id="chartVendor"><div class="empty-mini">暂无数据</div></div>
-      <div class="tag-cloud" id="tagCloud"></div>
-    </div>
-  </div>
-
   <!-- 筛选栏 -->
   <div class="filters" id="filterBar">
     <span class="f-label">筛选</span>
@@ -274,6 +271,17 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   <!-- 概览 -->
   <div class="tab-panel" id="tab-overview">
     <div class="kv-grid" id="ovStats"></div>
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>📈 近 7 日采集趋势</h3>
+        <div id="chartTrend"><div class="empty-mini">暂无数据</div></div>
+      </div>
+      <div class="dash-card">
+        <h3>🏢 厂商情报分布 <span class="hint" style="font-weight:400">累计 Top 12</span></h3>
+        <div id="chartVendor"><div class="empty-mini">暂无数据</div></div>
+        <div class="tag-cloud" id="tagCloud"></div>
+      </div>
+    </div>
     <div class="panel">
       <h3>今日情报预览 <span class="hint">相关度最高的前6条</span></h3>
       <div class="intel-grid" id="ovToday"></div>
@@ -391,7 +399,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 </div><!-- /container -->
 
 <script>
-var state = { date: '', vendor: '', industry: '', tag: '', rel: '', keyword: '', sort: 'rel', isAdmin: false };
+var state = { date: '', vendor: '', industry: '', tag: '', rel: '', keyword: '', sort: 'rel', page: 1, isAdmin: false };
 var DAY_MS = 86400000;
 
 function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -417,7 +425,7 @@ function initRoute(){
 }
 
 /* ===== 公开页 ===== */
-function loadAll(){ loadDates(); loadStats(); loadFilters(); loadIntelligence(); loadTrend(); }
+function loadAll(){ loadDates(); loadStats(); loadFilters(); loadIntelligence(); }
 
 /* ===== 趋势仪表盘 ===== */
 function loadTrend(){
@@ -523,17 +531,34 @@ function loadIntelligence(){
   if(state.tag) qs+='&tag='+encodeURIComponent(state.tag);
   if(state.rel) qs+='&relevance='+state.rel;
   if(state.keyword) qs+='&q='+encodeURIComponent(state.keyword);
+  qs+='&page='+state.page+'&page_size=8';
   var grid=document.getElementById('intelGrid'), empty=document.getElementById('emptyState');
   grid.innerHTML='<div class="loading">📡 正在加载情报…</div>';
   empty.classList.add('hidden');
   api('/api/intelligence'+qs).then(function(res){
-    if(!res.ok || !res.data.length){ grid.innerHTML=''; empty.classList.remove('hidden'); return; }
+    if(!res.ok || !res.data.length){ grid.innerHTML=''; empty.classList.remove('hidden'); renderPager(0,1,1); return; }
     empty.classList.add('hidden');
     var list=res.data.slice();
     if(state.sort==='new'){ list.sort(function(a,b){ return b.id-a.id; }); }
     grid.innerHTML = list.map(cardHtml).join('');
+    renderPager(res.total, res.page, res.total_pages);
   }).catch(function(){ grid.innerHTML=''; empty.classList.remove('hidden'); });
 }
+function renderPager(total, page, totalPages){
+  var el=document.getElementById('pager');
+  if(!el){ el=document.createElement('div'); el.id='pager'; el.className='pagination'; var eg=document.getElementById('intelGrid'); if(eg && eg.parentNode) eg.parentNode.insertBefore(el, eg.nextSibling); }
+  if(!total){ el.innerHTML=''; return; }
+  var html='';
+  html += '<button onclick="goPage('+(page-1)+')" '+(page<=1?'disabled':'')+'>‹ 上一页</button>';
+  var start=Math.max(1,page-2), end=Math.min(totalPages,page+2);
+  if(start>1){ html += '<button onclick="goPage(1)">1</button>'; if(start>2) html += '<span class="pg-info">…</span>'; }
+  for(var i=start;i<=end;i++) html += '<button class="'+(i===page?'active':'')+'" onclick="goPage('+i+')">'+i+'</button>';
+  if(end<totalPages){ if(end<totalPages-1) html += '<span class="pg-info">…</span>'; html += '<button onclick="goPage('+totalPages+')">'+totalPages+'</button>'; }
+  html += '<button onclick="goPage('+(page+1)+')" '+(page>=totalPages?'disabled':'')+'>下一页 ›</button>';
+  html += '<span class="pg-info">共 '+total+' 条 / '+page+'/'+totalPages+'</span>';
+  el.innerHTML=html;
+}
+function goPage(p){ if(p<1) return; state.page=p; loadIntelligence(); var eg=document.getElementById('intelGrid'); if(eg) window.scrollTo({top:eg.offsetTop-100,behavior:'smooth'}); }
 function cardHtml(it){
   var stars='', i;
   for(i=0;i<5;i++) stars += i<it.relevance ? '★' : '☆';
@@ -543,19 +568,25 @@ function cardHtml(it){
   if(it.industry) chips+='<span class="chip chip-industry">'+it.industry+'</span>';
   if(it.source) chips+='<span class="chip chip-src">'+it.source+'</span>';
   var title = it.url ? '<a href="'+it.url+'" target="_blank">'+esc(it.title)+'</a>' : esc(it.title);
-  return '<div class="intel-card" id="card-'+it.id+'">'+
-    '<div class="card-top">'+
-      '<div class="card-badge"><span class="rel-stars">'+stars+'</span><span class="rel-num">'+it.relevance+'/5</span></div>'+
-      '<div class="card-title">'+title+'</div>'+
-      '<button class="fav-btn'+(it.is_favorite?' on':'')+'" onclick="toggleFav('+it.id+',this)">'+(it.is_favorite?'★':'☆')+'</button>'+
-    '</div>'+
-    '<div class="card-meta">'+chips+tags+'</div>'+
-    '<div class="card-summary" id="sum-'+it.id+'">'+esc(it.summary||it.description||'')+'</div>'+
-    '<div class="card-foot">'+
-      '<span class="date">'+it.date+'</span>'+
-      (it.summary&&it.summary.length>80?'<button class="expand-btn" onclick="toggleSummary('+it.id+',this)">展开</button>':'')+
-    '</div>'+
-  '</div>';
+  // 摘要：summary(200字) 优先， 否则用 description
+  var sumText = it.summary || it.description || '';
+  var thumb = it.image ? '<img class="card-thumb" src="'+esc(it.image)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '';
+  var cls = thumb ? 'intel-card has-image' : 'intel-card';
+  var body =
+    '<div class="card-body">'+
+      '<div class="card-top">'+
+        '<div class="card-badge"><span class="rel-stars">'+stars+'</span><span class="rel-num">'+it.relevance+'/5</span></div>'+
+        '<div class="card-title">'+title+'</div>'+
+        '<button class="fav-btn'+(it.is_favorite?' on':'')+'" onclick="toggleFav('+it.id+',this)">'+(it.is_favorite?'★':'☆')+'</button>'+
+      '</div>'+
+      '<div class="card-meta">'+chips+tags+'</div>'+
+      '<div class="card-summary" id="sum-'+it.id+'">'+esc(sumText)+'</div>'+
+      '<div class="card-foot">'+
+        '<span class="date">'+it.date+'</span>'+
+        (sumText.length>100?'<button class="expand-btn" onclick="toggleSummary('+it.id+',this)">展开</button>':'')+
+      '</div>'+
+    '</div>';
+  return '<div class="'+cls+'" id="card-'+it.id+'">'+thumb+body+'</div>';
 }
 function toggleSummary(id,btn){
   var el=document.getElementById('sum-'+id);
@@ -610,7 +641,8 @@ function loadOverview(){
       '<div class="kv"><div class="num">'+s.favorites+'</div><div class="label">已收藏</div></div>'+
       '<div class="kv"><div class="num">'+s.vendors+'</div><div class="label">厂商覆盖</div></div>';
   });
-  api('/api/intelligence?date='+todayStr()+'&relevance=1').then(function(res){
+  loadTrend();
+  api('/api/intelligence?date='+todayStr()+'&relevance=1&page_size=6').then(function(res){
     var el=document.getElementById('ovToday');
     if(!res.ok || !res.data.length){ el.innerHTML='<div class="empty-state" style="padding:30px"><div class="big">🛰️</div><div class="tip">今日暂无数据，可去「采集推送」手动采集一次</div></div>'; return; }
     el.innerHTML=res.data.slice(0,6).map(cardHtml).join('');
@@ -833,15 +865,15 @@ function loadLogs(){
 }
 
 /* ===== 筛选事件绑定 ===== */
-document.getElementById('fVendor').addEventListener('change',function(){ state.vendor=this.value; loadIntelligence(); });
-document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; loadIntelligence(); });
-document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; loadIntelligence(); });
-document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; loadIntelligence(); });
-document.getElementById('fSort').addEventListener('change',function(){ state.sort=this.value; loadIntelligence(); });
+document.getElementById('fVendor').addEventListener('change',function(){ state.vendor=this.value; state.page=1; loadIntelligence(); });
+document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; state.page=1; loadIntelligence(); });
+document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; state.page=1; loadIntelligence(); });
+document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; state.page=1; loadIntelligence(); });
+document.getElementById('fSort').addEventListener('change',function(){ state.sort=this.value; state.page=1; loadIntelligence(); });
 var kwTimer;
 document.getElementById('fKeyword').addEventListener('input',function(){
   clearTimeout(kwTimer); var me=this;
-  kwTimer=setTimeout(function(){ state.keyword=me.value.trim(); loadIntelligence(); },400);
+  kwTimer=setTimeout(function(){ state.keyword=me.value.trim(); state.page=1; loadIntelligence(); },400);
 });
 
 /* ===== 启动 ===== */
