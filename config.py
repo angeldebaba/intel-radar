@@ -22,11 +22,13 @@ BACKUP_DIR = os.environ.get('BACKUP_DIR', '')
 # 后台密码（部署时务必通过环境变量 ADMIN_PASSWORD 覆盖！）
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'luban2026')
 
-# ===== AI 提炼（DeepSeek，OpenAI 兼容接口） =====
-# 去 https://platform.deepseek.com 创建 API Key；留空则采集降级为原关键词逻辑
+# ===== AI 提炼（OpenAI 兼容接口，默认智谱 GLM-4-Flash 免费） =====
+# 默认智谱：https://open.bigmodel.cn 注册后创建 API Key（glm-4-flash 免费）
+# 换 DeepSeek：AI_API_BASE=https://api.deepseek.com/v1 且 AI_MODEL=deepseek-chat
+# 留空 Key 则采集降级为原关键词逻辑
 AI_API_KEY = os.environ.get('AI_API_KEY', '')
-AI_API_BASE = os.environ.get('AI_API_BASE', 'https://api.deepseek.com/v1')
-AI_MODEL = os.environ.get('AI_MODEL', 'deepseek-chat')
+AI_API_BASE = os.environ.get('AI_API_BASE', 'https://open.bigmodel.cn/api/paas/v4')
+AI_MODEL = os.environ.get('AI_MODEL', 'glm-4-flash')
 AI_MIN_SCORE = int(os.environ.get('AI_MIN_SCORE', '2'))  # AI 评分低于此值丢弃
 AI_BATCH_SIZE = int(os.environ.get('AI_BATCH_SIZE', '10'))  # 每次请求合并分析的条数
 
