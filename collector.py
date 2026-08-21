@@ -20,13 +20,58 @@ from bs4 import BeautifulSoup  # 使用标准库 html.parser，无需 lxml
 import config
 import database
 
-HEADERS = {
-    'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'),
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.5',
-    'Referer': 'https://www.baidu.com/',
+# 更完整的浏览器请求头，模拟真实 Chrome
+BASE_HEADERS = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Cache-Control': 'max-age=0',
 }
+
+# 全局 session：复用连接、自动维护 cookie
+_session = requests.Session()
+_session.headers.update(BASE_HEADERS)
+
+
+def _random_ua():
+    """生成随机桌面 User-Agent，降低被风控概率"""
+    versions = [
+        ('Chrome/118.0.0.0 Safari/537.36', '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="24"'),
+        ('Chrome/119.0.0.0 Safari/537.36', '"Chromium";v="119", "Google Chrome";v="119", "Not=A?Brand";v="24"'),
+        ('Chrome/120.0.0.0 Safari/537.36', '"Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="99"'),
+        ('Chrome/121.0.0.0 Safari/537.36', '"Chromium";v="121", "Google Chrome";v="121", "Not=A?Brand";v="99"'),
+        ('Edg/120.0.0.0 Safari/537.36', '"Chromium";v="120", "Microsoft Edge";v="120", "Not=A?Brand";v="99"'),
+    ]
+    ver, sec = random.choice(versions)
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' + ver,
+        'Sec-Ch-Ua': sec,
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+    }
+
+
+def _request_get(url, timeout=10, headers=None, referer=None):
+    """通用 GET 请求，带随机 UA、session cookie 和异常处理"""
+    h = _random_ua()
+    h['Referer'] = referer or 'https://www.baidu.com/'
+    if headers:
+        h.update(headers)
+    try:
+        resp = _session.get(url, headers=h, timeout=timeout, allow_redirects=True)
+        resp.raise_for_status()
+        resp.encoding = resp.apparent_encoding or 'utf-8'
+        return resp
+    except Exception as e:
+        database.log('collect', '请求失败: {} | {}'.format(url[:80], e), 'warn')
+        return None
 
 
 def _clean_text(s):
@@ -37,35 +82,6 @@ def _clean_text(s):
     s = re.sub(r'<[^>]+>', ' ', s)
     s = re.sub(r'[\s\u200b\u200c\u200d\xa0]+', ' ', s).strip()
     return s
-
-
-def _random_ua():
-    """生成随机桌面 User-Agent，降低被风控概率"""
-    versions = [
-        'Chrome/118.0.0.0 Safari/537.36',
-        'Chrome/119.0.0.0 Safari/537.36',
-        'Chrome/120.0.0.0 Safari/537.36',
-        'Chrome/121.0.0.0 Safari/537.36',
-        'Edg/120.0.0.0 Safari/537.36',
-    ]
-    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' + random.choice(versions)
-
-
-def _request_get(url, timeout=10, headers=None):
-    """通用 GET 请求，带随机 UA 和异常处理"""
-    h = dict(HEADERS)
-    h['User-Agent'] = _random_ua()
-    if headers:
-        h.update(headers)
-    try:
-        resp = requests.get(url, headers=h, timeout=timeout, allow_redirects=True)
-        resp.raise_for_status()
-        # 尝试多种编码
-        resp.encoding = resp.apparent_encoding or 'utf-8'
-        return resp
-    except Exception as e:
-        database.log('collect', '请求失败: {} | {}'.format(url[:80], e), 'warn')
-        return None
 
 
 def _is_antispider(text):
@@ -97,9 +113,14 @@ def _extract_date(text):
 
 def fetch_baidu_news(query, max_results=8):
     """百度资讯搜索：返回 [{title,url,source,summary,published}]"""
-    url = 'https://news.baidu.com/ns?word={}&tn=news&from=news&cl=2&rn=20&ct=0'.format(quote(query))
     items = []
-    resp = _request_get(url, timeout=12)
+    # 先预热百度首页，获取 cookie，降低被反爬概率
+    _request_get('https://www.baidu.com/', timeout=8, referer='https://www.baidu.com/')
+    time.sleep(random.uniform(0.3, 0.8))
+
+    # 使用百度主站资讯搜索（结构更稳定）
+    url = 'https://www.baidu.com/s?rtt=1&bsst=1&cl=2&tn=news&word={}&ie=utf-8'.format(quote(query))
+    resp = _request_get(url, timeout=12, referer='https://www.baidu.com/')
     if not resp:
         return items
     text = resp.text
@@ -108,12 +129,12 @@ def fetch_baidu_news(query, max_results=8):
         return items
 
     soup = BeautifulSoup(text, 'html.parser')
-    # 过滤低质量域名
     LOW_QUALITY_DOMAINS = ['zhidao.baidu.com', 'tieba.baidu.com', 'baike.baidu.com',
-                           'wenku.baidu.com', 'zhihu.com/question']
-    # 百度新闻结果通常在 div.result 或 div.c-container
-    containers = soup.select('div.result') or soup.select('div.c-container')
-    for c in containers[:max_results]:
+                           'wenku.baidu.com', 'zhihu.com/question', 'jingyan.baidu.com']
+
+    # 新版百度资讯结果结构多样：div.result / div.c-container / div[data-module]
+    containers = soup.select('div.result, div.c-container, div.c-row, div.ops-line, div.news-item')
+    for c in containers[:max_results * 2]:
         a = c.select_one('h3 a')
         if not a:
             a = c.find('a')
@@ -121,22 +142,21 @@ def fetch_baidu_news(query, max_results=8):
             continue
         title = _clean_text(a.get_text())
         link = a.get('href', '')
-        if not title or not link:
+        if not title or not link or len(title) < 8:
             continue
-        # 过滤低质量域名
         if any(d in link for d in LOW_QUALITY_DOMAINS):
             continue
-        # 百度新闻 href 有时是跳转链接，尝试解析真实链接
-        if link.startswith('http://news.baidu.com/n'):
+        if link.startswith('http://news.baidu.com/n') or link.startswith('https://www.baidu.com/link'):
             real = _unescape_baidu_link(link)
             if real:
                 link = real
-        summary_el = c.select_one('span.content-right_8ZsCE, div.c-span9, p')
+            else:
+                continue
+        summary_el = c.select_one('span.content-right_8ZsCE, div.c-span9, span.c-color-text, p, div.content-right_8ZsCE')
         summary = _clean_text(summary_el.get_text() if summary_el else '')
-        source_el = c.select_one('span.c-color-gray, p.c-author')
+        source_el = c.select_one('span.c-color-gray, p.c-author, div.c-color-gray, a.c-font-medium')
         source = _clean_text(source_el.get_text() if source_el else '')
         published = _extract_date(source)
-        # 来源里通常包含日期，清洗一下
         if source:
             source = re.sub(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}.*$', '', source)
             source = re.sub(r'\d{1,2}:\d{2}.*$', '', source).strip()
@@ -149,6 +169,9 @@ def fetch_baidu_news(query, max_results=8):
             'published': published,
             'summary': summary,
         })
+        if len(items) >= max_results:
+            break
+    database.log('collect', '百度资讯[{}] 原始结果{}条 有效{}条'.format(query, len(containers), len(items)), 'ok')
     return items
 
 
@@ -167,7 +190,7 @@ def fetch_bing(query, max_results=8):
     """必应中国搜索：返回 [{title,url,source,summary,published}]"""
     url = 'https://cn.bing.com/search?q={}&setmkt=zh-CN&setlang=zh-CN&FORM=BEHPTB'.format(quote(query))
     items = []
-    resp = _request_get(url, timeout=12, headers={'Referer': 'https://cn.bing.com/'})
+    resp = _request_get(url, timeout=12, referer='https://cn.bing.com/')
     if not resp:
         return items
     text = resp.text
@@ -177,24 +200,39 @@ def fetch_bing(query, max_results=8):
 
     soup = BeautifulSoup(text, 'html.parser')
     NOISE_DOMAINS = ['baike.baidu.com', 'wikipedia.org', 'zhihu.com/question',
-                     'www.zhihu.com', 'tieba.baidu.com']
-    for li in soup.select('li.b_algo')[:max_results * 2]:
-        a = li.select_one('h2 a')
+                     'www.zhihu.com', 'tieba.baidu.com', 'quote.eastmoney.com',
+                     'download.', 'ws.com.cn', 'products']
+    # 必应新版结果结构：li.b_algo 或 div.b_algo 或 div[data-idx]
+    candidates = soup.select('li.b_algo, div.b_algo, div.b_title')
+    skipped = 0
+    for li in candidates[:max_results * 3]:
+        a = li.select_one('h2 a') or li.select_one('a')
         if not a:
             continue
         title = _clean_text(a.get_text())
         link = a.get('href', '')
-        if not title or not link:
+        if not title or not link or len(title) < 10:
+            skipped += 1
             continue
-        # 过滤百科/问答/首页
         if any(nd in link for nd in NOISE_DOMAINS):
+            skipped += 1
             continue
         parsed = urlparse(link)
-        if parsed.path in ('', '/'):
+        if parsed.path in ('', '/', '/index.html'):
+            skipped += 1
             continue
-        summary_el = li.select_one('p')
+        # 过滤明显是频道首页/下载页的链接
+        path_lower = parsed.path.lower()
+        if any(path_lower.endswith('/' + x) for x in ['products', 'product', 'download', 'downloads']):
+            skipped += 1
+            continue
+        # 保留路径较深或标题明显相关的页面
+        if path_lower.count('/') <= 1 and not any(k in title for k in config.RELEVANCE_HIGH):
+            skipped += 1
+            continue
+        summary_el = li.select_one('p, div.b_caption')
         summary = _clean_text(summary_el.get_text() if summary_el else '')
-        source_el = li.select_one('cite, div.b_attribution')
+        source_el = li.select_one('cite, div.b_attribution, span[dir="ltr"]')
         source = _clean_text(source_el.get_text() if source_el else '')
         if not source:
             source = '必应'
@@ -207,14 +245,54 @@ def fetch_bing(query, max_results=8):
         })
         if len(items) >= max_results:
             break
+    database.log('collect', '必应[{}] 原始结果{}条 跳过{}条 有效{}条'.format(query, len(candidates), skipped, len(items)), 'ok')
     return items
 
 
-def fetch_sogou_web(query, max_results=6):
-    """搜狗网页搜索（兜底）：返回 [{title,url,source,summary,published}]"""
+def _resolve_sogou_link(link):
+    """访问搜狗跳转链接，解析出真实 URL"""
+    if not link.startswith('https://www.sogou.com/link'):
+        return link
+    try:
+        resp = _request_get(link, timeout=8, referer='https://www.sogou.com/')
+        if not resp:
+            return link
+        text = resp.text
+        # window.location.replace("http://...")
+        m = re.search(r'window\.location\.replace\(["\']([^"\']+)["\']\)', text)
+        if m:
+            return m.group(1)
+        # <META http-equiv="refresh" content="0;URL='...'">
+        m = re.search(r'<meta[^>]+http-equiv=["\']refresh["\'][^>]+url=["\']?([^"\'>\s]+)', text, re.I)
+        if m:
+            return m.group(1).strip("'\"")
+        return resp.url if resp.url != link else link
+    except Exception:
+        return link
+
+
+def _sogou_home_warmup():
+    """预热搜狗首页，获取 cookie，降低反爬概率"""
+    try:
+        _request_get('https://www.sogou.com/', timeout=8, referer='https://www.sogou.com/')
+    except Exception:
+        pass
+
+
+_warmup_done = False
+
+
+def fetch_sogou_web(query, max_results=8):
+    """搜狗网页搜索（当前主源）：返回 [{title,url,source,summary,published}]"""
+    global _warmup_done
+    if not _warmup_done:
+        _sogou_home_warmup()
+        _warmup_done = True
+        time.sleep(random.uniform(1.0, 2.0))
+
     url = 'https://www.sogou.com/web?query={}&page=1'.format(quote(query))
     items = []
-    resp = _request_get(url, timeout=10)
+    resp = _request_get(url, timeout=12, referer='https://www.sogou.com/')
     if not resp:
         return items
     text = resp.text
@@ -224,14 +302,27 @@ def fetch_sogou_web(query, max_results=6):
 
     # 搜狗结果一般在 h3 a
     results = re.findall(r'<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', text, re.S)
-    for link, title in results[:max_results]:
+    skipped = 0
+    for link, title in results[:max_results * 2]:
         title = _clean_text(title)
-        if not title or not link:
+        if not title or len(title) < 10:
+            skipped += 1
             continue
         if not link.startswith('http'):
             link = urljoin('https://www.sogou.com', link)
-        items.append({'title': title, 'url': link, 'source': '搜狗',
+        # 解析真实 URL
+        real_url = _resolve_sogou_link(link)
+        # 过滤百科/知道/问答等低质量
+        LOW_QUALITY = ['baike.baidu.com', 'zhidao.baidu.com', 'zhihu.com/question',
+                       'wenku.baidu.com', 'tieba.baidu.com']
+        if any(d in real_url for d in LOW_QUALITY):
+            skipped += 1
+            continue
+        items.append({'title': title, 'url': real_url, 'source': '搜狗',
                       'published': '', 'summary': ''})
+        if len(items) >= max_results:
+            break
+    database.log('collect', '搜狗[{}] 原始结果{}条 跳过{}条 有效{}条'.format(query, len(results), skipped, len(items)), 'ok')
     return items
 
 
@@ -367,34 +458,39 @@ def _dedup_by_url(items):
 
 def fetch_query(query, vendor_name='', max_results=8):
     """
-    综合采集一个查询：
-    1. 优先该厂商官网（如果配置）
-    2. 百度资讯
-    3. 必应中国
-    4. 搜狗网页兜底
+    综合采集一个查询（当前策略）：
+    1. 搜狗网页搜索（主源，国内机房访问稳定，真实URL可解析）
+    2. 必应中国（辅源）
+    3. 重点厂商官网（补充权威信息）
+    4. 百度资讯（备用，常被验证拦截）
     返回去重后的结果列表
     """
     all_items = []
+    counts = {'official': 0, 'baidu': 0, 'bing': 0, 'sogou': 0}
 
-    # 1. 官网
+    # 1. 搜狗（主源）
+    sogou = fetch_sogou_web(query, max_results=max_results)
+    counts['sogou'] = len(sogou)
+    all_items.extend(sogou)
+    time.sleep(1.0)
+
+    # 2. 必应（辅源）
+    bing = fetch_bing(query, max_results=max_results)
+    counts['bing'] = len(bing)
+    all_items.extend(bing)
+    time.sleep(0.8)
+
+    # 3. 官网
     if vendor_name:
         official = fetch_vendor_official(vendor_name, max_results=max_results)
+        counts['official'] = len(official)
         all_items.extend(official)
         time.sleep(0.5)
 
-    # 2. 百度资讯
+    # 4. 百度资讯（备用）
     baidu = fetch_baidu_news(query, max_results=max_results)
+    counts['baidu'] = len(baidu)
     all_items.extend(baidu)
-    time.sleep(1.0)
-
-    # 3. 必应
-    bing = fetch_bing(query, max_results=max_results)
-    all_items.extend(bing)
-    time.sleep(1.0)
-
-    # 4. 搜狗兜底
-    sogou = fetch_sogou_web(query, max_results=max_results)
-    all_items.extend(sogou)
 
     # 去重：同 URL 只留一个；优先保留有来源的
     seen = {}
@@ -406,10 +502,11 @@ def fetch_query(query, vendor_name='', max_results=8):
             seen[url] = it
 
     results = list(seen.values())[:max_results]
-    # 补一个来源标记
     for r in results:
         if not r.get('source'):
             r['source'] = '网络'
+    database.log('collect', '聚合[{}] 搜狗{} 必应{} 官网{} 百度{} 去重后{}'.format(
+        query, counts['sogou'], counts['bing'], counts['official'], counts['baidu'], len(results)), 'ok')
     return results
 
 
@@ -458,6 +555,45 @@ def detect_industry(title, desc):
         if ind in text:
             return ind
     return ''
+
+
+# ==================== 诊断工具 ====================
+
+def diagnose(query='海康威视 数字孪生'):
+    """
+    对单个查询做诊断，返回各数据源原始结果（不写入数据库）。
+    用于后台排查云端反爬/解析问题。
+    """
+    out = {'query': query, 'sources': {}}
+    # 百度
+    try:
+        baidu = fetch_baidu_news(query, max_results=5)
+        out['sources']['baidu'] = {
+            'count': len(baidu),
+            'samples': [{'title': i['title'], 'source': i['source'], 'url': i['url']} for i in baidu[:3]]
+        }
+    except Exception as e:
+        out['sources']['baidu'] = {'error': str(e)}
+    time.sleep(0.5)
+    # 必应
+    try:
+        bing = fetch_bing(query, max_results=5)
+        out['sources']['bing'] = {
+            'count': len(bing),
+            'samples': [{'title': i['title'], 'source': i['source'], 'url': i['url']} for i in bing[:3]]
+        }
+    except Exception as e:
+        out['sources']['bing'] = {'error': str(e)}
+    # 搜狗
+    try:
+        sogou = fetch_sogou_web(query, max_results=5)
+        out['sources']['sogou'] = {
+            'count': len(sogou),
+            'samples': [{'title': i['title'], 'source': i['source'], 'url': i['url']} for i in sogou[:3]]
+        }
+    except Exception as e:
+        out['sources']['sogou'] = {'error': str(e)}
+    return out
 
 
 # ==================== 异步进度与主采集 ====================
@@ -553,8 +689,8 @@ def collect_once():
         except Exception as e:
             errors += 1
             database.log('collect', '查询失败: {} | {}'.format(query, e), 'warn')
-        # 夜间低频率：1.5~2.5 秒随机间隔，降低被封概率
-        time.sleep(random.uniform(1.5, 2.5))
+        # 夜间低频率：3~5 秒随机间隔，降低被封概率（腾讯云机房 IP 需要更慢）
+        time.sleep(random.uniform(3.0, 5.0))
 
     _update_progress(running=False, done=len(queries), added=added,
                      errors=errors, current='', finished_at=database.now_str())

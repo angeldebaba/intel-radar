@@ -316,6 +316,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
           <button class="btn btn-orange" onclick="manualCollect()" id="btnCollect">🔍 立即采集</button>
           <button class="btn" onclick="manualPush()" id="btnPush">📤 推送今日Top3</button>
           <button class="btn btn-green" onclick="testPush()" id="btnTest">🧪 测试推送</button>
+          <button class="btn" onclick="runDiagnose()" id="btnDiag" title="检测百度/必应/搜狗在云端是否返回结果">🔧 诊断采集</button>
         </div>
         <div class="msg" id="opMsg"></div>
         <div class="form-row" style="margin-top:14px;">
@@ -694,6 +695,36 @@ function testPush(){
   api('/api/admin/push-test',{method:'POST'}).then(function(res){
     b.disabled=false; b.textContent='🧪 测试推送';
     document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">✅ '+res.msg+'</span>' : '<span class="msg err">'+res.msg+'</span>';
+  });
+}
+function runDiagnose(){
+  var b=document.getElementById('btnDiag');
+  var q=prompt('请输入要诊断的查询词（默认：海康威视 数字孪生）','海康威视 数字孪生');
+  if(q===null) return;
+  b.disabled=true; b.textContent='诊断中…';
+  document.getElementById('opMsg').innerHTML='<span class="msg">正在诊断「'+esc(q)+'」，请稍候…</span>';
+  api('/api/admin/diagnose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})}).then(function(res){
+    b.disabled=false; b.textContent='🔧 诊断采集';
+    if(!res.ok){
+      document.getElementById('opMsg').innerHTML='<span class="msg err">诊断失败：'+(res.error||'未知错误')+'</span>';
+      return;
+    }
+    var d=res.data;
+    var html='<div class="msg" style="white-space:pre-wrap;line-height:1.8;"><b>诊断结果：'+esc(d.query)+'</b><br>';
+    for(var src in d.sources){
+      var s=d.sources[src];
+      html+='【'+src+'】返回 '+s.count+' 条';
+      if(s.error) html+=' <span style="color:var(--red)">错误：'+esc(s.error)+'</span>';
+      html+='<br>';
+      (s.samples||[]).forEach(function(x){
+        html+='  · <a href="'+esc(x.url)+'" target="_blank" style="color:var(--blue)">'+esc(x.title)+'</a> <span style="color:var(--text3)">'+esc(x.source)+'</span><br>';
+      });
+    }
+    html+='</div>';
+    document.getElementById('opMsg').innerHTML=html;
+  }).catch(function(){
+    b.disabled=false; b.textContent='🔧 诊断采集';
+    document.getElementById('opMsg').innerHTML='<span class="msg err">诊断请求失败</span>';
   });
 }
 

@@ -328,6 +328,16 @@ def admin_collect_status():
     return jsonify({'ok': True, 'data': collector.collect_status()})
 
 
+@app.route('/api/admin/diagnose', methods=['POST'])
+@require_admin
+def admin_diagnose():
+    """诊断单个查询：返回百度/必应/搜狗各源原始结果数（不写入数据库）"""
+    data = request.get_json(silent=True) or {}
+    query = (data.get('query') or '海康威视 数字孪生').strip()
+    result = collector.diagnose(query)
+    return jsonify({'ok': True, 'data': result})
+
+
 @app.route('/api/admin/push-test', methods=['POST'])
 @require_admin
 def admin_push_test():
