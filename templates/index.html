@@ -76,6 +76,7 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .chip-industry{background:rgba(57,197,207,.13);color:#5fd4dd;}
 .chip-tag{background:rgba(188,140,255,.13);color:#cba8ff;}
 .chip-src{background:var(--bg3);color:var(--text2);}
+.chip-ai{background:rgba(255,196,84,.14);color:#ffc65a;}
 .card-summary{color:var(--text2);font-size:13px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;}
 .pagination{display:flex;justify-content:center;align-items:center;gap:6px;margin:18px 0 8px;flex-wrap:wrap;}
 .pagination button{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;transition:all .15s;font-family:inherit;}
@@ -400,6 +401,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 
 <script>
 var state = { date: '', vendor: '', industry: '', tag: '', rel: '', keyword: '', sort: 'rel', page: 1, isAdmin: false };
+var INTEL_STORE = {};   // 卡片数据缓存（展开/收起切换摘要用）
 var DAY_MS = 86400000;
 
 function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -568,8 +570,11 @@ function cardHtml(it){
   if(it.industry) chips+='<span class="chip chip-industry">'+it.industry+'</span>';
   if(it.source) chips+='<span class="chip chip-src">'+it.source+'</span>';
   var title = it.url ? '<a href="'+it.url+'" target="_blank">'+esc(it.title)+'</a>' : esc(it.title);
-  // 摘要：summary(200字) 优先， 否则用 description
+  // 收起时显示 AI 提炼摘要(summary)，展开后显示采集到的原文摘要(description)
   var sumText = it.summary || it.description || '';
+  var fullText = (it.description && it.description.length > sumText.length) ? it.description : sumText;
+  INTEL_STORE[it.id] = it;   // 供展开/收起切换文案用
+  if(it.summary && it.description && it.summary !== it.description) chips+='<span class="chip chip-ai">✨AI提炼</span>';
   var thumb = it.image ? '<img class="card-thumb" src="'+esc(it.image)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '';
   var cls = thumb ? 'intel-card has-image' : 'intel-card';
   var body =
@@ -583,15 +588,20 @@ function cardHtml(it){
       '<div class="card-summary" id="sum-'+it.id+'">'+esc(sumText)+'</div>'+
       '<div class="card-foot">'+
         '<span class="date">'+it.date+'</span>'+
-        (sumText.length>100?'<button class="expand-btn" onclick="toggleSummary('+it.id+',this)">展开</button>':'')+
+        (fullText.length>80?'<button class="expand-btn" onclick="toggleSummary('+it.id+',this)">展开原文</button>':'')+
       '</div>'+
     '</div>';
   return '<div class="'+cls+'" id="card-'+it.id+'">'+thumb+body+'</div>';
 }
 function toggleSummary(id,btn){
-  var el=document.getElementById('sum-'+id);
-  if(el.classList.contains('expanded')){ el.classList.remove('expanded'); btn.textContent='展开'; }
-  else { el.classList.add('expanded'); btn.textContent='收起'; }
+  var el=document.getElementById('sum-'+id), it=INTEL_STORE[id];
+  if(el.classList.contains('expanded')){
+    el.classList.remove('expanded'); btn.textContent='展开原文';
+    if(it) el.textContent=(it.summary||it.description||'');
+  } else {
+    el.classList.add('expanded'); btn.textContent='收起';
+    if(it && it.description && it.description.length>(it.summary||'').length) el.textContent=it.description;
+  }
 }
 function toggleFav(id,btn){
   api('/api/favorite/'+id,{method:'POST',headers:{'Content-Type':'application/json'}}).then(function(res){
