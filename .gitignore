@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# 敏感信息 - 绝不提交
+pushplus_token.txt
+*.token
+
+# 数据库（云端用Postgres，本地库不提交）
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# 临时文件
+*.log
+_check_tmp.js
+_smoke_out.xml
+_ck.txt
+_an.json
+_page.html
+push_auto_daily.html
+
+# IDE
+.idea/
+.vscode/
+.DS_Store

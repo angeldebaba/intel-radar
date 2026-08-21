@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>行业情报雷达</title>
+<style>
+:root{
+  --bg:#0d1117; --bg2:#161b22; --bg3:#1f2630; --border:#30363d;
+  --text:#e6edf3; --text2:#8b949e; --text3:#6e7681;
+  --blue:#58a6ff; --purple:#bc8cff; --orange:#f0a020; --green:#3fb950;
+  --red:#f85149; --teal:#39c5cf;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6;}
+a{color:var(--blue);text-decoration:none;}
+.hidden{display:none!important;}
+.container{max-width:1200px;margin:0 auto;padding:12px;}
+@media(min-width:768px){.container{padding:20px;}}
+
+/* ===== 顶部 ===== */
+header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);}
+.topbar-inner{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px;}
+.logo{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700;}
+.logo .icon{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#58a6ff,#bc8cff);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.logo small{font-weight:400;color:var(--text2);font-size:12px;margin-left:2px;}
+.topbar-spacer{flex:1;}
+.topbar-links{display:flex;gap:8px;align-items:center;}
+.topbar-links a{color:var(--text2);font-size:13px;padding:5px 10px;border-radius:6px;transition:all .15s;}
+.topbar-links a:hover{color:var(--blue);background:var(--bg3);}
+#btnBack{display:none;}
+
+/* ===== 日期导航 ===== */
+.datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 10px;}
+.date-nav{display:flex;align-items:center;gap:4px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:4px;overflow-x:auto;max-width:100%;}
+.date-nav button{background:none;border:none;color:var(--text2);padding:5px 12px;font-size:13px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:all .15s;}
+.date-nav button:hover{color:var(--text);background:var(--bg3);}
+.date-nav button.active{color:var(--blue);background:rgba(88,166,255,.15);font-weight:600;}
+.date-nav button.today-btn{color:var(--orange);font-weight:600;}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;}
+.stat-chip{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px;color:var(--text2);white-space:nowrap;}
+.stat-chip b{color:var(--text);margin:0 2px;}
+
+/* ===== 筛选栏 ===== */
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;}
+.filters select,.filters input[type=text]{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;min-width:110px;}
+.filters select:focus,.filters input:focus{border-color:var(--blue);}
+.filters input[type=text]{flex:1;min-width:140px;max-width:280px;}
+.filters .f-label{color:var(--text3);font-size:12px;}
+.filter-clear{background:none;border:1px dashed var(--border);color:var(--text2);padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;}
+.filter-clear:hover{color:var(--blue);border-color:var(--blue);}
+
+/* ===== 情报卡片 ===== */
+.intel-grid{display:grid;grid-template-columns:1fr;gap:12px;}
+@media(min-width:768px){.intel-grid{grid-template-columns:1fr 1fr;}}
+@media(min-width:1024px){.intel-grid{grid-template-columns:1fr 1fr 1fr;}}
+.intel-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;transition:border-color .15s, transform .15s;}
+.intel-card:hover{border-color:#3d4754;transform:translateY(-1px);}
+.card-top{display:flex;align-items:flex-start;gap:10px;}
+.card-badge{display:flex;flex-direction:column;align-items:center;min-width:34px;gap:2px;}
+.rel-stars{color:var(--orange);font-size:11px;letter-spacing:-1px;white-space:nowrap;}
+.rel-num{color:var(--text3);font-size:10px;}
+.card-title{font-size:14.5px;font-weight:600;line-height:1.45;flex:1;}
+.card-title a{color:var(--text);}
+.card-title a:hover{color:var(--blue);}
+.fav-btn{background:none;border:none;font-size:17px;cursor:pointer;color:var(--text3);padding:2px 4px;transition:all .15s;flex-shrink:0;}
+.fav-btn:hover{transform:scale(1.2);}
+.fav-btn.on{color:var(--purple);}
+.card-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.chip{font-size:11px;padding:2px 9px;border-radius:12px;white-space:nowrap;}
+.chip-vendor{background:rgba(88,166,255,.15);color:#7cc0ff;}
+.chip-industry{background:rgba(57,197,207,.13);color:#5fd4dd;}
+.chip-tag{background:rgba(188,140,255,.13);color:#cba8ff;}
+.chip-src{background:var(--bg3);color:var(--text2);}
+.card-summary{color:var(--text2);font-size:12.5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.card-summary.expanded{-webkit-line-clamp:unset;}
+.card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;border-top:1px solid rgba(48,54,61,.5);}
+.card-foot .date{color:var(--text3);font-size:11.5px;}
+.expand-btn{background:none;border:none;color:var(--text2);font-size:12px;cursor:pointer;padding:2px 6px;}
+.expand-btn:hover{color:var(--blue);}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text3);}
+.empty-state .big{font-size:42px;margin-bottom:12px;}
+.empty-state .tip{font-size:13px;line-height:2;}
+
+/* ===== 登录 ===== */
+.login-wrap{max-width:380px;margin:60px auto;padding:30px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;}
+.login-wrap h2{margin-bottom:6px;font-size:19px;}
+.login-wrap p.sub{color:var(--text2);font-size:13px;margin-bottom:20px;}
+.login-wrap input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:11px 14px;border-radius:8px;font-size:14px;outline:none;margin-bottom:14px;}
+.login-wrap input:focus{border-color:var(--blue);}
+.btn{display:inline-block;background:var(--blue);color:#0d1117;border:none;padding:10px 22px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit;}
+.btn:hover{filter:brightness(1.15);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-ghost{background:var(--bg3);color:var(--text);}
+.btn-orange{background:var(--orange);color:#0d1117;}
+.btn-green{background:var(--green);color:#0d1117;}
+.btn-sm{padding:6px 14px;font-size:12.5px;border-radius:6px;}
+.msg{font-size:13px;margin-top:12px;}
+.msg.err{color:var(--red);}
+.msg.ok{color:var(--green);}
+
+/* ===== 后台 ===== */
+.admin-header{display:flex;align-items:center;gap:10px;margin:16px 0 14px;flex-wrap:wrap;}
+.admin-header h2{font-size:18px;}
+.admin-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px;}
+.admin-tabs button{background:none;border:none;color:var(--text2);padding:8px 16px;font-size:13.5px;border-radius:8px;cursor:pointer;transition:all .15s;font-family:inherit;}
+.admin-tabs button:hover{color:var(--text);background:var(--bg3);}
+.admin-tabs button.active{color:var(--blue);background:rgba(88,166,255,.12);font-weight:600;}
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px;}
+.panel h3{font-size:15px;margin-bottom:14px;color:var(--text);display:flex;align-items:center;gap:8px;}
+.panel h3 .hint{font-size:12px;color:var(--text3);font-weight:400;}
+.grid-2{display:grid;grid-template-columns:1fr;gap:16px;}
+@media(min-width:900px){.grid-2{grid-template-columns:1fr 1fr;}}
+textarea,input[type=text],input[type=password],select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;}
+textarea{min-height:120px;resize:vertical;line-height:1.6;}
+textarea:focus,input:focus,select:focus{border-color:var(--blue);}
+.form-row{margin-bottom:12px;}
+.form-row label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px;}
+.form-row .sub{font-size:11px;color:var(--text3);margin-top:4px;}
+.row-flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.row-flex>*{flex:1;min-width:140px;}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
+
+/* 表格 */
+.tbl-wrap{overflow-x:auto;margin-top:10px;}
+table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:600px;}
+table.tbl th{background:var(--bg3);color:var(--text2);text-align:left;padding:9px 10px;font-weight:600;border-bottom:1px solid var(--border);position:sticky;top:0;white-space:nowrap;}
+table.tbl td{padding:9px 10px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:top;}
+table.tbl tr:hover td{background:rgba(88,166,255,.04);}
+.tag-h{display:inline-block;background:rgba(248,81,73,.15);color:#ff8b85;padding:1px 8px;border-radius:10px;font-size:11px;}
+.tag-m{display:inline-block;background:rgba(240,160,32,.15);color:#ffc861;padding:1px 8px;border-radius:10px;font-size:11px;}
+.tag-l{display:inline-block;background:rgba(139,148,158,.15);color:#a9b2bd;padding:1px 8px;border-radius:10px;font-size:11px;}
+.del-btn{background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px;}
+.del-btn:hover{background:rgba(248,81,73,.15);}
+.kv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:6px;}
+.kv{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;}
+.kv .num{font-size:24px;font-weight:700;color:var(--blue);}
+.kv .label{font-size:11.5px;color:var(--text2);margin-top:2px;}
+.gap-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;}
+.gap-row .g-vendor{color:#7cc0ff;font-size:12px;min-width:70px;font-weight:600;}
+.gap-row .g-title{flex:1;font-size:13px;min-width:200px;}
+.gap-row .g-title a{color:var(--text);}
+.gap-row .g-title a:hover{color:var(--blue);}
+.gap-row .g-sum{width:100%;color:var(--text2);font-size:12px;margin-top:4px;}
+.vendor-cap{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;}
+.vendor-cap .v-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.vendor-cap .v-name{font-weight:600;font-size:14px;}
+.vendor-cap .v-count{background:rgba(88,166,255,.15);color:#7cc0ff;font-size:11px;padding:2px 10px;border-radius:12px;}
+.vendor-cap ul{list-style:none;}
+.vendor-cap li{font-size:12.5px;color:var(--text2);padding:4px 0;border-bottom:1px dashed rgba(48,54,61,.5);}
+.vendor-cap li:last-child{border-bottom:none;}
+.vendor-cap li a{color:var(--text2);}
+.vendor-cap li a:hover{color:var(--blue);}
+.log-line{font-size:12.5px;padding:7px 0;border-bottom:1px dashed rgba(48,54,61,.4);color:var(--text2);display:flex;gap:8px;flex-wrap:wrap;}
+.log-line .lt{color:var(--text3);min-width:80px;}
+.log-line .st{font-size:11px;padding:1px 8px;border-radius:10px;}
+.log-line .st.ok{background:rgba(63,185,80,.15);color:var(--green);}
+.log-line .st.err{background:rgba(248,81,73,.15);color:var(--red);}
+.log-line .st.warn{background:rgba(240,160,32,.15);color:var(--orange);}
+
+/* 手机底部安全区 */
+.mobile-pad{height:env(safe-area-inset-bottom);}
+@media(max-width:767px){
+  .container{padding:10px;}
+  .intel-card{padding:12px;}
+  .stats{width:100%;margin-left:0;}
+  .filters{position:sticky;top:52px;background:var(--bg);z-index:50;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:10px;}
+  .admin-tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px;}
+  .admin-tabs button{flex-shrink:0;padding:7px 12px;font-size:13px;}
+  .topbar-inner{padding:8px 12px;}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="logo"><span class="icon">📡</span>行业情报雷达<small>数字孪生 · 视频融合</small></div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-links">
+      <a href="javascript:;" id="btnBack" onclick="showView('radar')">← 返回</a>
+      <a href="javascript:;" id="linkAdmin" onclick="showView('admin')">⚙ 后台</a>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- ========== 公开页：雷达 ========== -->
+<div id="view-radar">
+  <!-- 日期导航 + 统计 -->
+  <div class="datebar">
+    <div class="date-nav" id="dateNav"></div>
+    <div class="stats" id="statsBar"></div>
+  </div>
+
+  <!-- 筛选栏 -->
+  <div class="filters" id="filterBar">
+    <span class="f-label">筛选</span>
+    <select id="fVendor"><option value="">全部厂商</option></select>
+    <select id="fIndustry"><option value="">全部行业</option></select>
+    <select id="fTag"><option value="">全部标签</option></select>
+    <select id="fRel"><option value="">全部相关度</option>
+      <option value="5">★★★★★ 5</option>
+      <option value="4">★★★★ 4+</option>
+      <option value="3">★★★ 3+</option>
+    </select>
+    <input type="text" id="fKeyword" placeholder="搜索关键词…">
+    <button class="filter-clear" onclick="clearFilters()">✕ 清空</button>
+  </div>
+
+  <!-- 情报列表 -->
+  <div class="intel-grid" id="intelGrid"></div>
+  <div class="empty-state hidden" id="emptyState">
+    <div class="big">🛰️</div>
+    <div class="tip">今天还没有情报数据。<br>等每日自动采集跑起来后，这里会显示行业动态。</div>
+  </div>
+</div>
+
+<!-- ========== 后台：登录 ========== -->
+<div id="view-admin-login" class="hidden">
+  <div class="login-wrap">
+    <h2>⚙ 后台管理</h2>
+    <p class="sub">请输入管理密码（默认 luban2026，部署后请修改）</p>
+    <input type="password" id="adminPwd" placeholder="管理密码" onkeydown="if(event.key==='Enter')adminLogin()">
+    <button class="btn" style="width:100%;" onclick="adminLogin()">登 录</button>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+</div>
+
+<!-- ========== 后台：管理面板 ========== -->
+<div id="view-admin" class="hidden">
+  <div class="admin-header">
+    <h2>⚙ 后台管理</h2>
+    <button class="btn btn-ghost btn-sm" onclick="adminLogout()">退出登录</button>
+  </div>
+  <div class="admin-tabs" id="adminTabs">
+    <button data-tab="overview" class="active" onclick="switchTab('overview')">数据概览</button>
+    <button data-tab="dahua" onclick="switchTab('dahua')">大华功能</button>
+    <button data-tab="analysis" onclick="switchTab('analysis')">竞品分析</button>
+    <button data-tab="settings" onclick="switchTab('settings')">采集推送</button>
+    <button data-tab="logs" onclick="switchTab('logs')">运行日志</button>
+  </div>
+
+  <!-- 概览 -->
+  <div class="tab-panel" id="tab-overview">
+    <div class="kv-grid" id="ovStats"></div>
+    <div class="panel">
+      <h3>今日情报预览 <span class="hint">相关度最高的前6条</span></h3>
+      <div class="intel-grid" id="ovToday"></div>
+    </div>
+  </div>
+
+  <!-- 大华功能 -->
+  <div class="tab-panel hidden" id="tab-dahua">
+    <div class="grid-2">
+      <div class="panel">
+        <h3>➕ 手动添加</h3>
+        <div class="form-row"><label>分类/行业</label><input type="text" id="dfCategory" placeholder="如：三维引擎 / 视频融合 / 智慧医院"></div>
+        <div class="form-row"><label>功能名称 *</label><input type="text" id="dfName" placeholder="如：视频孪生场景编辑器"></div>
+        <div class="form-row"><label>功能描述</label><textarea id="dfDesc" placeholder="该功能的详细说明"></textarea></div>
+        <button class="btn btn-sm" onclick="addDahuaFeature()">添加</button>
+      </div>
+      <div class="panel">
+        <h3>📥 批量导入 <span class="hint">每行一条：功能名|描述|分类</span></h3>
+        <textarea id="dfImportText" placeholder="看板创建|支持拖拽定制数据看板|可视化业务&#10;视频孪生底座|实时视频与三维场景融合|三维引擎&#10;..."></textarea>
+        <div class="btn-row">
+          <button class="btn btn-green btn-sm" onclick="importDahuaText()">批量导入</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadDahuaList()">刷新列表</button>
+        </div>
+        <div class="msg" id="dfMsg"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>已导入功能清单 <span class="hint" id="dfCount"></span></h3>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>ID</th><th>分类</th><th>功能名称</th><th>描述</th><th>导入时间</th><th></th></tr></thead>
+          <tbody id="dfTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 竞品分析 -->
+  <div class="tab-panel hidden" id="tab-analysis">
+    <div class="panel">
+      <h3>📊 分析说明</h3>
+      <p style="color:var(--text2);font-size:13px;line-height:1.8;">
+        基于「大华功能清单」与「采集到的友商情报」做关键词比对：情报中出现、但大华功能清单中没有对应能力的高相关条目，
+        判定为<b style="color:var(--red)">潜在差距项</b>。下方同时展示各厂商情报覆盖度和行业热点功能。
+      </p>
+    </div>
+    <div class="kv-grid" id="anStats"></div>
+    <div class="panel">
+      <h3>⚠️ 潜在差距项 <span class="hint">友商有 / 大华清单未覆盖 · 相关度≥3</span></h3>
+      <div id="anGaps"></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <h3>🏢 厂商情报覆盖度</h3>
+        <div id="anVendors"></div>
+      </div>
+      <div class="panel">
+        <h3>🔥 大华功能行业热度 <span class="hint">在情报中出现越多次=行业越热点</span></h3>
+        <div id="anCoverage"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 采集推送 -->
+  <div class="tab-panel hidden" id="tab-settings">
+    <div class="grid-2">
+      <div class="panel">
+        <h3>⚡ 手动操作</h3>
+        <div class="row-flex">
+          <button class="btn btn-orange" onclick="manualCollect()" id="btnCollect">🔍 立即采集</button>
+          <button class="btn" onclick="manualPush()" id="btnPush">📤 推送今日Top3</button>
+          <button class="btn btn-green" onclick="testPush()" id="btnTest">🧪 测试推送</button>
+        </div>
+        <div class="msg" id="opMsg"></div>
+        <div class="form-row" style="margin-top:14px;">
+          <label>厂商与主题词</label>
+          <div style="color:var(--text2);font-size:12px;line-height:1.8;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;" id="vendorPreview"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>🕐 定时设置 <span class="hint">服务器时区（东八区）</span></h3>
+        <div class="row-flex">
+          <div class="form-row" style="flex:1;min-width:130px;"><label>每日采集时间</label><input type="time" id="setCollTime" value="07:30"></div>
+          <div class="form-row" style="flex:1;min-width:130px;"><label>每日推送时间</label><input type="time" id="setPushTime" value="08:00"></div>
+          <div class="form-row" style="flex:1;min-width:130px;"><label>每日推送条数</label><input type="number" id="setTopN" value="3" min="1" max="10"></div>
+        </div>
+        <div class="form-row">
+          <label>PushPlus Token <span style="color:var(--orange);">（免费微信推送必填）</span></label>
+          <input type="text" id="setToken" placeholder="点击右侧"阅读说明"获取免费token">
+          <div class="sub">
+            ① 手机访问 <a href="https://www.pushplus.plus/" target="_blank">pushplus.plus</a> 微信扫码登录<br>
+            ② 关注公众号「pushplus推送加」<br>
+            ③ 复制你的 token 粘贴到这里<br>
+            ④ 点「保存设置」，再点「测试推送」验证
+          </div>
+        </div>
+        <button class="btn btn-sm" onclick="saveSettings()">💾 保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="tab-panel hidden" id="tab-logs">
+    <div class="panel">
+      <h3>📋 运行日志 <span class="hint">最近30条采集/推送记录</span></h3>
+      <div id="logList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="mobile-pad"></div>
+</div><!-- /container -->
+
+<script>
+var state = { date: '', vendor: '', industry: '', tag: '', rel: '', keyword: '', isAdmin: false };
+var DAY_MS = 86400000;
+
+function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function api(url, opts){ opts=opts||{}; return fetch(url, opts).then(function(r){ return r.json().catch(function(){ return {ok:false,error:'网络错误'}; }); }); }
+
+/* ===== 视图切换 ===== */
+function showView(v){
+  ['radar','admin-login','admin'].forEach(function(id){
+    document.getElementById('view-'+id).classList.add('hidden');
+  });
+  document.getElementById('view-'+v).classList.remove('hidden');
+  document.getElementById('btnBack').style.display = (v==='admin'||v==='admin-login') ? 'inline-block' : 'none';
+  document.getElementById('linkAdmin').style.display = (v==='admin') ? 'none' : 'inline-block';
+  if(v==='radar'){ loadAll(); }
+  if(v==='admin-login'){ checkAdminStatus(); }
+  if(v==='admin'){ loadAdminPanel(); }
+  window.scrollTo(0,0);
+}
+function initRoute(){
+  var h = location.hash;
+  if(h==='#admin' || h==='#admin-login'){ showView('admin-login'); checkAdminStatus(); }
+  else { showView('radar'); }
+}
+
+/* ===== 公开页 ===== */
+function loadAll(){ loadDates(); loadStats(); loadFilters(); loadIntelligence(); }
+
+function loadDates(){
+  api('/api/dates').then(function(res){
+    if(!res.ok) return;
+    var dates = res.data, nav = document.getElementById('dateNav');
+    if(!dates.length){ dates=[todayStr()]; }
+    if(state.date && dates.indexOf(state.date)<0) dates.unshift(state.date);
+    var html = '<button onclick="shiftDate(-1)">◀</button>';
+    dates.slice(0,7).forEach(function(d){
+      var label = d===todayStr() ? '今日' : d.slice(5);
+      var cls = (d===state.date) ? 'active' : (d===todayStr() ? 'today-btn' : '');
+      html += '<button class="'+cls+'" onclick="setDate(\''+d+'\')">'+label+'</button>';
+    });
+    html += '<button onclick="shiftDate(1)">▶</button>';
+    nav.innerHTML = html;
+  });
+}
+function setDate(d){ state.date=d; loadIntelligence(); loadFilters(); loadDates(); }
+function shiftDate(dir){
+  var base = state.date ? new Date(state.date+'T00:00:00') : new Date();
+  base.setDate(base.getDate()+dir);
+  state.date = base.getFullYear()+'-'+String(base.getMonth()+1).padStart(2,'0')+'-'+String(base.getDate()).padStart(2,'0');
+  loadIntelligence(); loadDates();
+}
+
+function loadStats(){
+  api('/api/stats').then(function(res){
+    if(!res.ok) return;
+    var s=res.data, el=document.getElementById('statsBar');
+    el.innerHTML =
+      '<span class="stat-chip">今日 <b>'+s.today+'</b> 条</span>'+
+      '<span class="stat-chip">收藏 <b>'+s.favorites+'</b> 条</span>'+
+      '<span class="stat-chip">累计 <b>'+s.total+'</b> 条</span>'+
+      '<span class="stat-chip">厂商 <b>'+s.vendors+'</b> 家</span>';
+  });
+}
+
+function loadFilters(){
+  api('/api/filters').then(function(res){
+    if(!res.ok) return;
+    var f=res.data;
+    var vSel=document.getElementById('fVendor'), iSel=document.getElementById('fIndustry'), tSel=document.getElementById('fTag');
+    var curV=state.vendor, curI=state.industry, curT=state.tag;
+    vSel.innerHTML='<option value="">全部厂商</option>'+f.vendors.map(function(x){return '<option'+(x===curV?' selected':'')+'>'+x+'</option>';}).join('');
+    iSel.innerHTML='<option value="">全部行业</option>'+f.industries.map(function(x){return '<option'+(x===curI?' selected':'')+'>'+x+'</option>';}).join('');
+    tSel.innerHTML='<option value="">全部标签</option>'+f.tags.map(function(x){return '<option'+(x===curT?' selected':'')+'>'+x+'</option>';}).join('');
+  });
+}
+function clearFilters(){
+  state.vendor=state.industry=state.tag=state.rel=''; state.keyword='';
+  ['fVendor','fIndustry','fTag','fRel','fKeyword'].forEach(function(id){document.getElementById(id).value='';});
+  loadIntelligence(); loadFilters();
+}
+
+function loadIntelligence(){
+  var qs='?date='+(state.date||todayStr());
+  if(state.vendor) qs+='&vendor='+encodeURIComponent(state.vendor);
+  if(state.industry) qs+='&industry='+encodeURIComponent(state.industry);
+  if(state.tag) qs+='&tag='+encodeURIComponent(state.tag);
+  if(state.rel) qs+='&relevance='+state.rel;
+  if(state.keyword) qs+='&q='+encodeURIComponent(state.keyword);
+  api('/api/intelligence'+qs).then(function(res){
+    var grid=document.getElementById('intelGrid'), empty=document.getElementById('emptyState');
+    if(!res.ok || !res.data.length){ grid.innerHTML=''; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    grid.innerHTML = res.data.map(cardHtml).join('');
+  });
+}
+function cardHtml(it){
+  var stars='', i;
+  for(i=0;i<5;i++) stars += i<it.relevance ? '★' : '☆';
+  var tags=(it.tags||[]).map(function(t){return '<span class="chip chip-tag">'+t+'</span>';}).join('');
+  var chips='';
+  if(it.vendor) chips+='<span class="chip chip-vendor">'+it.vendor+'</span>';
+  if(it.industry) chips+='<span class="chip chip-industry">'+it.industry+'</span>';
+  if(it.source) chips+='<span class="chip chip-src">'+it.source+'</span>';
+  var title = it.url ? '<a href="'+it.url+'" target="_blank">'+esc(it.title)+'</a>' : esc(it.title);
+  return '<div class="intel-card" id="card-'+it.id+'">'+
+    '<div class="card-top">'+
+      '<div class="card-badge"><span class="rel-stars">'+stars+'</span><span class="rel-num">'+it.relevance+'/5</span></div>'+
+      '<div class="card-title">'+title+'</div>'+
+      '<button class="fav-btn'+(it.is_favorite?' on':'')+'" onclick="toggleFav('+it.id+',this)">'+(it.is_favorite?'★':'☆')+'</button>'+
+    '</div>'+
+    '<div class="card-meta">'+chips+tags+'</div>'+
+    '<div class="card-summary" id="sum-'+it.id+'">'+esc(it.summary||it.description||'')+'</div>'+
+    '<div class="card-foot">'+
+      '<span class="date">'+it.date+'</span>'+
+      (it.summary&&it.summary.length>80?'<button class="expand-btn" onclick="toggleSummary('+it.id+',this)">展开</button>':'')+
+    '</div>'+
+  '</div>';
+}
+function toggleSummary(id,btn){
+  var el=document.getElementById('sum-'+id);
+  if(el.classList.contains('expanded')){ el.classList.remove('expanded'); btn.textContent='展开'; }
+  else { el.classList.add('expanded'); btn.textContent='收起'; }
+}
+function toggleFav(id,btn){
+  api('/api/favorite/'+id,{method:'POST',headers:{'Content-Type':'application/json'}}).then(function(res){
+    if(res.ok){ btn.classList.toggle('on'); btn.textContent = res.data.is_favorite?'★':'☆'; loadStats(); }
+  });
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+/* ===== 后台 ===== */
+function checkAdminStatus(){
+  api('/api/admin/status').then(function(res){
+    if(res.ok && res.admin){ showView('admin'); }
+    else { document.getElementById('view-admin-login').classList.remove('hidden'); }
+  });
+}
+function adminLogin(){
+  var pwd=document.getElementById('adminPwd').value, msg=document.getElementById('loginMsg');
+  msg.textContent=''; msg.className='msg';
+  api('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})}).then(function(res){
+    if(res.ok){ showView('admin'); }
+    else { msg.className='msg err'; msg.textContent=res.error||'登录失败'; }
+  });
+}
+function adminLogout(){
+  api('/api/admin/logout',{method:'POST'}).then(function(){ showView('radar'); });
+}
+function switchTab(tab){
+  document.querySelectorAll('#adminTabs button').forEach(function(b){b.classList.toggle('active',b.dataset.tab===tab);});
+  ['overview','dahua','analysis','settings','logs'].forEach(function(t){
+    document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab);
+  });
+  if(tab==='overview') loadOverview();
+  if(tab==='dahua') loadDahuaList();
+  if(tab==='analysis') loadAnalysis();
+  if(tab==='settings') loadSettings();
+  if(tab==='logs') loadLogs();
+}
+function loadAdminPanel(){ switchTab('overview'); }
+
+function loadOverview(){
+  api('/api/stats').then(function(res){
+    if(!res.ok) return;
+    var s=res.data;
+    document.getElementById('ovStats').innerHTML =
+      '<div class="kv"><div class="num">'+s.today+'</div><div class="label">今日新增</div></div>'+
+      '<div class="kv"><div class="num">'+s.total+'</div><div class="label">情报总量</div></div>'+
+      '<div class="kv"><div class="num">'+s.favorites+'</div><div class="label">已收藏</div></div>'+
+      '<div class="kv"><div class="num">'+s.vendors+'</div><div class="label">厂商覆盖</div></div>';
+  });
+  api('/api/intelligence?date='+todayStr()+'&relevance=1').then(function(res){
+    var el=document.getElementById('ovToday');
+    if(!res.ok || !res.data.length){ el.innerHTML='<div class="empty-state" style="padding:30px"><div class="big">🛰️</div><div class="tip">今日暂无数据，可去「采集推送」手动采集一次</div></div>'; return; }
+    el.innerHTML=res.data.slice(0,6).map(cardHtml).join('');
+  });
+}
+
+function loadDahuaList(){
+  api('/api/admin/dahua').then(function(res){
+    if(!res.ok) return;
+    var rows=res.data, tb=document.getElementById('dfTableBody');
+    document.getElementById('dfCount').textContent='共 '+rows.length+' 条';
+    tb.innerHTML=rows.map(function(r){
+      return '<tr><td>'+r.id+'</td><td>'+(r.category||'-')+'</td><td><b>'+esc(r.feature_name)+'</b></td><td>'+esc(r.description||'')+'</td><td>'+esc(r.imported_at||'')+'</td>'+
+        '<td><button class="del-btn" onclick="delDahua('+r.id+')">删除</button></td></tr>';
+    }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">暂无数据，请先导入大华功能</td></tr>';
+  });
+}
+function addDahuaFeature(){
+  var name=document.getElementById('dfName').value.trim();
+  if(!name){ document.getElementById('dfMsg').innerHTML='<span class="msg err">请填写功能名称</span>'; return; }
+  api('/api/admin/dahua',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    category:document.getElementById('dfCategory').value.trim(),
+    feature_name:name,
+    description:document.getElementById('dfDesc').value.trim()
+  })}).then(function(res){
+    var m=document.getElementById('dfMsg');
+    if(res.ok){ m.innerHTML='<span class="msg ok">✅ 已添加</span>'; document.getElementById('dfName').value=''; document.getElementById('dfDesc').value=''; loadDahuaList(); }
+    else m.innerHTML='<span class="msg err">'+res.error+'</span>';
+  });
+}
+function importDahuaText(){
+  var text=document.getElementById('dfImportText').value;
+  var cat=document.getElementById('dfCategory').value.trim();
+  if(!text.trim()){ document.getElementById('dfMsg').innerHTML='<span class="msg err">请先粘贴内容</span>'; return; }
+  api('/api/admin/dahua/import-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,category:cat})}).then(function(res){
+    var m=document.getElementById('dfMsg');
+    if(res.ok){ m.innerHTML='<span class="msg ok">✅ 成功导入 '+res.count+' 条</span>'; document.getElementById('dfImportText').value=''; loadDahuaList(); }
+    else m.innerHTML='<span class="msg err">'+res.error+'</span>';
+  });
+}
+function delDahua(id){
+  if(!confirm('确认删除这条功能？')) return;
+  api('/api/admin/dahua/'+id,{method:'DELETE'}).then(function(res){ if(res.ok) loadDahuaList(); });
+}
+
+function loadAnalysis(){
+  var btn=document.getElementById('btnAnalysis');
+  api('/api/admin/analysis').then(function(res){
+    if(!res.ok){ document.getElementById('anGaps').innerHTML='<span class="msg err">'+res.error+'</span>'; return; }
+    var d=res.data;
+    document.getElementById('anStats').innerHTML =
+      '<div class="kv"><div class="num">'+d.feature_count+'</div><div class="label">大华功能数</div></div>'+
+      '<div class="kv"><div class="num">'+d.intel_count+'</div><div class="label">情报样本</div></div>'+
+      '<div class="kv"><div class="num" style="color:var(--red)">'+d.gaps.length+'</div><div class="label">潜在差距项</div></div>'+
+      '<div class="kv"><div class="num" style="color:var(--orange)">'+d.vendor_summary.length+'</div><div class="label">厂商覆盖</div></div>';
+    var gapsEl=document.getElementById('anGaps');
+    if(!d.gaps.length){
+      gapsEl.innerHTML='<div style="color:var(--text3);text-align:center;padding:20px;">暂无差距项。请先导入大华功能清单，或等待采集更多情报。</div>';
+    }else{
+      gapsEl.innerHTML=d.gaps.slice(0,50).map(function(g){
+        return '<div class="gap-row">'+
+          '<span class="g-vendor">'+(g.vendor||'行业')+'</span>'+
+          '<span class="g-title"><a href="'+g.url+'" target="_blank">'+esc(g.title)+'</a></span>'+
+          (g.relevance>=4?'<span class="tag-h">高相关</span>':(g.relevance===3?'<span class="tag-m">中相关</span>':'<span class="tag-l">低</span>'))+
+          (g.industry?'<span class="chip chip-industry">'+g.industry+'</span>':'')+
+          '<div class="g-sum">'+esc(g.summary)+'</div>'+
+        '</div>';
+      }).join('');
+    }
+    var vEl=document.getElementById('anVendors');
+    vEl.innerHTML=d.vendor_summary.map(function(v){
+      return '<div class="vendor-cap"><div class="v-head"><span class="v-name">'+esc(v.vendor)+'</span><span class="v-count">'+v.count+' 条</span></div><ul>'+
+        v.top.map(function(t){ return '<li>📄 <a href="'+t.url+'" target="_blank">'+esc(t.title)+'</a></li>'; }).join('')+
+      '</ul></div>';
+    }).join('') || '<div style="color:var(--text3);padding:10px;">暂无数据</div>';
+    var cEl=document.getElementById('anCoverage');
+    cEl.innerHTML=d.coverage.length ? d.coverage.map(function(c,i){
+      var bar = Math.min(100, c.industry_hits*8);
+      return '<div style="margin-bottom:8px;">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:2px;">'+
+          '<span>'+(c.category?'['+esc(c.category)+'] ':'')+'<b>'+esc(c.feature)+'</b></span>'+
+          '<span style="color:var(--orange)">'+c.industry_hits+' 次</span>'+
+        '</div>'+
+        '<div style="background:var(--bg3);border-radius:4px;height:6px;"><div style="height:100%;width:'+bar+'%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:4px;"></div></div>'+
+        (c.recent_hits.length?'<div style="font-size:11px;color:var(--text3);margin-top:3px;">'+c.recent_hits.map(esc).join(' · ')+'</div>':'')+
+      '</div>';
+    }).join('') : '<div style="color:var(--text3);padding:10px;">暂无数据</div>';
+  });
+}
+
+function loadSettings(){
+  api('/api/admin/settings').then(function(res){
+    if(!res.ok) return;
+    var s=res.data;
+    document.getElementById('setToken').value=s.pushplus_token||'';
+    document.getElementById('setCollTime').value=s.coll_time||'07:30';
+    document.getElementById('setPushTime').value=s.push_time||'08:00';
+    document.getElementById('setTopN').value=s.push_top_n||3;
+  });
+  api('/api/admin/analysis').then(function(res){
+    if(res.ok){
+      var vs=res.data.vendor_summary.map(function(v){return v.vendor+' ('+v.count+')';}).join('、');
+      document.getElementById('vendorPreview').textContent = vs ? '已配置厂商与覆盖量：'+vs : '暂无采集数据';
+    }
+  });
+}
+function saveSettings(){
+  api('/api/admin/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    pushplus_token:document.getElementById('setToken').value.trim(),
+    coll_time:document.getElementById('setCollTime').value,
+    push_time:document.getElementById('setPushTime').value,
+    push_top_n:parseInt(document.getElementById('setTopN').value)||3
+  })}).then(function(res){
+    document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">✅ 设置已保存，定时任务已更新</span>' : '<span class="msg err">保存失败</span>';
+  });
+}
+function manualCollect(){
+  var b=document.getElementById('btnCollect');
+  b.disabled=true; b.textContent='采集中…';
+  document.getElementById('opMsg').innerHTML='<span class="msg">正在从各厂商抓取新闻，约需1-2分钟…</span>';
+  api('/api/admin/collect',{method:'POST'}).then(function(res){
+    b.disabled=false; b.textContent='🔍 立即采集';
+    document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">✅ 采集完成，新增 '+res.added+' 条</span>' : '<span class="msg err">'+res.error+'</span>';
+    loadAll(); loadOverview();
+  }).catch(function(){
+    b.disabled=false; b.textContent='🔍 立即采集';
+    document.getElementById('opMsg').innerHTML='<span class="msg err">请求超时（采集可能仍在后台进行，稍后刷新查看）</span>';
+  });
+}
+function manualPush(){
+  var b=document.getElementById('btnPush');
+  b.disabled=true; b.textContent='推送中…';
+  api('/api/admin/push-now',{method:'POST'}).then(function(res){
+    b.disabled=false; b.textContent='📤 推送今日Top3';
+    document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">'+res.msg+'</span>' : '<span class="msg err">'+res.msg+'</span>';
+  });
+}
+function testPush(){
+  var b=document.getElementById('btnTest');
+  b.disabled=true; b.textContent='测试中…';
+  api('/api/admin/push-test',{method:'POST'}).then(function(res){
+    b.disabled=false; b.textContent='🧪 测试推送';
+    document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">✅ '+res.msg+'</span>' : '<span class="msg err">'+res.msg+'</span>';
+  });
+}
+
+function loadLogs(){
+  api('/api/admin/logs').then(function(res){
+    if(!res.ok) return;
+    var el=document.getElementById('logList');
+    el.innerHTML=res.data.map(function(l){
+      return '<div class="log-line"><span class="lt">'+l.created_at+'</span><span class="st '+l.status+'">'+
+        (l.action==='collect'?'采集':(l.action==='push'?'推送':l.action))+'</span><span>'+esc(l.detail)+'</span></div>';
+    }).join('') || '<div style="color:var(--text3);padding:10px;">暂无日志</div>';
+  });
+}
+
+/* ===== 筛选事件绑定 ===== */
+document.getElementById('fVendor').addEventListener('change',function(){ state.vendor=this.value; loadIntelligence(); });
+document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; loadIntelligence(); });
+document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; loadIntelligence(); });
+document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; loadIntelligence(); });
+var kwTimer;
+document.getElementById('fKeyword').addEventListener('input',function(){
+  clearTimeout(kwTimer); var me=this;
+  kwTimer=setTimeout(function(){ state.keyword=me.value.trim(); loadIntelligence(); },400);
+});
+
+/* ===== 启动 ===== */
+state.date = todayStr();
+initRoute();
+</script>
+</body>
+</html>
