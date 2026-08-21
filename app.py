@@ -432,6 +432,25 @@ def admin_collect_status():
     return jsonify({'ok': True, 'data': collector.collect_status()})
 
 
+@app.route('/api/admin/ai-status')
+@require_admin
+def admin_ai_status():
+    """AI 提炼模块状态与连通性检查"""
+    import ai as ai_mod
+    info = {
+        'enabled': ai_mod.enabled(),
+        'model': ai_mod.MODEL,
+        'api_base': ai_mod.API_BASE,
+        'min_score': config.AI_MIN_SCORE,
+    }
+    if ai_mod.enabled():
+        info.update(ai_mod.test_connection())
+    else:
+        info['ok'] = False
+        info['msg'] = '未配置 AI_API_KEY（当前为关键词降级模式）'
+    return jsonify({'ok': True, 'data': info})
+
+
 @app.route('/api/admin/diagnose', methods=['POST'])
 @require_admin
 def admin_diagnose():
