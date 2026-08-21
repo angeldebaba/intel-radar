@@ -68,6 +68,33 @@ def api_stats():
     return jsonify({'ok': True, 'data': s})
 
 
+@app.route('/api/stats/trend')
+def api_stats_trend():
+    """趋势仪表盘数据：最近7日每日新增 + 厂商分布Top12 + 标签分布"""
+    from datetime import timedelta
+    days = []
+    base = datetime.now()
+    for i in range(6, -1, -1):
+        days.append((base - timedelta(days=i)).strftime('%Y-%m-%d'))
+    ph = database.PH
+    daily = {r['date']: r['c'] for r in database.query(
+        'SELECT date, COUNT(*) AS c FROM intelligence WHERE date >= ' + ph + ' GROUP BY date',
+        (days[0],))}
+    vendors = database.query(
+        "SELECT vendor, COUNT(*) AS c FROM intelligence WHERE vendor!='' "
+        'GROUP BY vendor ORDER BY c DESC LIMIT 12')
+    tags = {}
+    for r in database.query('SELECT tags FROM intelligence'):
+        for t in json.loads(r['tags'] or '[]'):
+            tags[t] = tags.get(t, 0) + 1
+    return jsonify({'ok': True, 'data': {
+        'daily': [{'date': d, 'count': daily.get(d, 0)} for d in days],
+        'vendors': vendors,
+        'tags': [{'tag': k, 'count': v} for k, v in
+                 sorted(tags.items(), key=lambda x: -x[1])],
+    }})
+
+
 @app.route('/api/intelligence')
 def api_intelligence():
     """情报列表，支持 date/vendor/industry/tag/relevance/fav 过滤"""
@@ -230,15 +257,12 @@ def admin_dahua_import_text():
 
 
 # -------- 竞品分析 --------
-@app.route('/api/admin/analysis')
-@require_admin
-def admin_analysis():
-    """基于大华功能清单 vs 采集情报，生成竞品差距报告"""
+def _build_analysis():
+    """竞品分析核心逻辑：大华功能清单 vs 采集情报（供 API 与导出共用）"""
     features = database.query('SELECT * FROM dahua_features ORDER BY category, id')
     intels = database.query(
         'SELECT * FROM intelligence ORDER BY relevance DESC, id DESC LIMIT 300')
 
-    # 1) 情报中出现的厂商能力（去重聚合）
     vendor_caps = {}
     for it in intels:
         v = it['vendor'] or '行业动态'
@@ -253,13 +277,11 @@ def admin_analysis():
             'industry': it['industry'],
         })
 
-    # 2) 大华功能 vs 情报关键词匹配：找出"友商有、大华无"的差距
     gaps = []
     for it in intels:
         text = (it['title'] + ' ' + it['summary']).lower()
         matched = False
         for f in features:
-            # 用功能名里的核心词做匹配（去掉常见修饰词）
             kw = re.sub(r'[\s（()）【】\[\]：:、,，。.·]+', '', f['feature_name']).lower()
             if len(kw) >= 2 and kw in text.replace(' ', ''):
                 matched = True
@@ -276,13 +298,11 @@ def admin_analysis():
                 'relevance': it['relevance'],
             })
 
-    # 3) 按厂商汇总
     vendor_summary = []
     for v, items in sorted(vendor_caps.items(), key=lambda x: -len(x[1])):
         vendor_summary.append({'vendor': v, 'count': len(items),
                                'top': items[:3]})
 
-    # 4) 大华功能覆盖分析（哪些功能在情报中频繁出现 = 行业热点）
     coverage = []
     for f in features:
         kw = re.sub(r'[\s（()）【】\[\]：:、,，。.·]+', '', f['feature_name']).lower()
@@ -296,13 +316,76 @@ def admin_analysis():
         })
     coverage.sort(key=lambda x: -x['industry_hits'])
 
-    return jsonify({'ok': True, 'data': {
+    return {
         'feature_count': len(features),
         'intel_count': len(intels),
         'gaps': gaps,
         'vendor_summary': vendor_summary,
         'coverage': coverage,
-    }})
+    }
+
+
+@app.route('/api/admin/analysis')
+@require_admin
+def admin_analysis():
+    """基于大华功能清单 vs 采集情报，生成竞品差距报告"""
+    return jsonify({'ok': True, 'data': _build_analysis()})
+
+
+@app.route('/api/admin/analysis/export')
+@require_admin
+def admin_analysis_export():
+    """导出自包含 HTML 竞品分析报告（浏览器直接下载）"""
+    d = _build_analysis()
+    now = database.now_str()
+    rows_gap = ''.join(
+        '<tr><td>{}</td><td>{}</td><td><a href="{}">{}</a></td><td>{}</td><td>{}</td></tr>'.format(
+            g['date'], esc(g['vendor'] or '行业'), g['url'], esc(g['title']),
+            g['relevance'], esc(g['summary']))
+        for g in d['gaps'][:80])
+    rows_cov = ''.join(
+        '<tr><td>{}</td><td>{}</td><td style="text-align:center">{}</td><td>{}</td></tr>'.format(
+            esc(c['category'] or '-'), esc(c['feature']), c['industry_hits'],
+            esc('；'.join(c['recent_hits'][:2])))
+        for c in d['coverage'][:60])
+    rows_vend = ''.join(
+        '<tr><td>{}</td><td style="text-align:center">{}</td></tr>'.format(esc(v['vendor']), v['count'])
+        for v in d['vendor_summary'])
+    html = '''<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<title>竞品分析报告 {now}</title>
+<style>
+body{{font-family:"PingFang SC","Microsoft YaHei",sans-serif;max-width:1000px;margin:24px auto;padding:0 16px;color:#24292f;line-height:1.7;}}
+h1{{border-bottom:2px solid #58a6ff;padding-bottom:8px;}}
+h2{{margin-top:28px;color:#0969da;}}
+table{{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0;}}
+th,td{{border:1px solid #d0d7de;padding:6px 10px;text-align:left;vertical-align:top;}}
+th{{background:#f6f8fa;}}
+a{{color:#0969da;text-decoration:none;}}
+.meta{{color:#57606a;font-size:13px;}}
+.warn{{color:#cf222e;font-weight:600;}}
+</style></head><body>
+<h1>📡 行业情报雷达 · 竞品分析报告</h1>
+<p class="meta">生成时间：{now} ｜ 大华功能 {fc} 条 ｜ 情报样本 {ic} 条 ｜ <span class="warn">潜在差距项 {gc} 条</span></p>
+<h2>一、潜在差距项（友商有 / 大华清单未覆盖 · 相关度≥3）</h2>
+<table><tr><th>日期</th><th>厂商</th><th>情报标题</th><th>相关度</th><th>摘要</th></tr>{rows_gap}</table>
+<h2>二、厂商情报覆盖度</h2>
+<table><tr><th>厂商</th><th>情报条数</th></tr>{rows_vend}</table>
+<h2>三、大华功能行业热度（情报中出现越多 = 行业越热点）</h2>
+<table><tr><th>分类</th><th>功能</th><th>命中次数</th><th>近期命中情报</th></tr>{rows_cov}</table>
+<p class="meta">本报告由 intel-radar 自动生成</p>
+</body></html>'''.format(now=now, fc=d['feature_count'], ic=d['intel_count'],
+                         gc=len(d['gaps']), rows_gap=rows_gap,
+                         rows_vend=rows_vend, rows_cov=rows_cov)
+    return app.response_class(
+        html, mimetype='text/html',
+        headers={'Content-Disposition':
+                 'attachment; filename="intel-radar-report-{}.html"'.format(
+                     database.today_str())})
+
+
+def esc(s):
+    return (str(s or '').replace('&', '&amp;').replace('<', '&lt;')
+            .replace('>', '&gt;').replace('"', '&quot;'))
 
 
 # -------- 采集控制 --------
