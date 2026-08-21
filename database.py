@@ -184,10 +184,12 @@ def now_str():
 
 
 def add_intelligence(item):
-    """新增一条情报；若同标题+日期已存在则跳过"""
+    """新增一条情报；按标题/URL 全局去重（跨日期），已存在则跳过"""
+    title = item.get('title', '')
+    url = item.get('url', '')
     exist = query_one(
-        'SELECT id FROM intelligence WHERE date=' + PH + ' AND title=' + PH,
-        (item.get('date', today_str()), item.get('title', '')))
+        'SELECT id FROM intelligence WHERE title=' + PH + " OR (url!='' AND url=" + PH + ')',
+        (title, url))
     if exist:
         return False
     placeholders = ','.join([PH] * 11)
