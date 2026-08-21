@@ -19,8 +19,8 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'luban2026')
 
 # ===== 采集配置 =====
 # 采集与推送时间（24小时制 HH:MM，服务器时区）
-COLLECT_TIME = os.environ.get('COLLECT_TIME', '07:30')   # 每日采集
-PUSH_TIME = os.environ.get('PUSH_TIME', '08:00')          # 每日微信推送
+COLLECT_TIME = os.environ.get('COLLECT_TIME', '23:00')    # 每晚采集，次日白天可见
+PUSH_TIME = os.environ.get('PUSH_TIME', '08:00')          # 每日早上微信推送
 MAX_PER_QUERY = int(os.environ.get('MAX_PER_QUERY', 6))   # 每个查询取前N条
 
 # 厂商列表：name=中文名, key=搜索关键词（多个组合）

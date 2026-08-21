@@ -28,7 +28,10 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB上传限制
 database.init_db()
 
 # 首次启动把默认配置写入数据库
-if not database.get_config('vendors_configured'):
+# 当代码升级（config_version 变化）时，重新同步时间/条数默认值
+CONFIG_VERSION = '2'
+if database.get_config('config_version') != CONFIG_VERSION:
+    database.set_config('config_version', CONFIG_VERSION)
     database.set_config('vendors_configured', '1')
     database.set_config('coll_time', config.COLLECT_TIME)
     database.set_config('push_time', config.PUSH_TIME)
