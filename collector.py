@@ -90,6 +90,41 @@ def _clean_text(s):
     return s
 
 
+def _extract_og_image(html_text):
+    """从文章页提取 og:image 或正文首图，限定 jpg/png/webp"""
+    if not html_text:
+        return ''
+    m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.I)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.I)
+    if m:
+        return m.group(1).strip()
+    # 取正文首张图片
+    m = re.search(r'<img[^>]+src=["\'](https?://[^"\']+\.(?:jpg|jpeg|png|webp))["\']', html_text, re.I)
+    if m:
+        return m.group(1).strip()
+    return ''
+
+
+def _enrich_article_image(item, timeout=6):
+    """异步补充缩略图：抓文章页 → 解析 og:image"""
+    if item.get('image'):
+        return
+    url = item.get('url', '')
+    if not url.startswith('http'):
+        return
+    try:
+        resp = _request_get(url, timeout=timeout, referer='https://www.sogou.com/')
+        if not resp:
+            return
+        img = _extract_og_image(resp.text[:200000])
+        if img and img.startswith('http'):
+            item['image'] = img
+    except Exception:
+        pass
+
+
 def _is_antispider(text):
     """检测是否被反爬"""
     if not text:
@@ -880,6 +915,11 @@ def collect_once():
             industry = detect_industry(title, it.get('summary', ''))
             rel = score_relevance(title, it.get('summary', ''))
             tags = detect_tags(title, it.get('summary', ''))
+
+            # 缩略图：异步抓文章页 og:image（前3条用同步，避免拖慢整体）
+            if not it.get('image') and added < 3:
+                _enrich_article_image(it)
+
             ok = database.add_intelligence({
                 'date': database.today_str(),
                 'vendor': vendor_name,
@@ -889,6 +929,7 @@ def collect_once():
                 'url': url,
                 'summary': (it.get('summary') or '')[:200],
                 'description': it.get('summary', ''),
+                'image': it.get('image', ''),
                 'relevance': rel,
                 'tags': tags,
             })
