@@ -44,7 +44,7 @@ def fetch_sogou_weixin(query, max_results=8):
     url = 'https://weixin.sogou.com/weixin?type=2&query={}&ie=utf8'.format(quote(query))
     items = []
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15,
+        resp = requests.get(url, headers=HEADERS, timeout=8,
                             cookies={'SUV': 'test'})
         resp.raise_for_status()
         text = resp.text
@@ -95,7 +95,7 @@ def fetch_sogou_web(query, max_results=6):
     url = 'https://www.sogou.com/web?query={}'.format(quote(query))
     items = []
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = requests.get(url, headers=HEADERS, timeout=8)
         resp.raise_for_status()
         text = resp.text
         if _is_antispider(text):
@@ -185,8 +185,25 @@ def detect_industry(title, desc):
     return ''
 
 
+# 异步采集进度（供后台轮询）
+PROGRESS = {
+    'running': False,
+    'total': 0,
+    'done': 0,
+    'added': 0,
+    'errors': 0,
+    'current': '',
+    'finished_at': '',
+}
+
+
+def collect_status():
+    """返回当前采集进度（副本）"""
+    return dict(PROGRESS)
+
+
 def collect_once():
-    """执行一次采集，返回新增条数"""
+    """执行一次采集，返回新增条数（带实时进度更新）"""
     added = 0
     errors = 0
     queries = []
@@ -200,8 +217,18 @@ def collect_once():
     for q in config.INDUSTRY_QUERIES:
         queries.append(('', q, ''))
 
+    PROGRESS['running'] = True
+    PROGRESS['total'] = len(queries)
+    PROGRESS['done'] = 0
+    PROGRESS['added'] = 0
+    PROGRESS['errors'] = 0
+    PROGRESS['current'] = ''
+    PROGRESS['finished_at'] = ''
+
     total_queries = len(queries)
     for i, (vendor, query, vendor_name) in enumerate(queries):
+        PROGRESS['done'] = i
+        PROGRESS['current'] = query
         try:
             items = fetch_all(query, config.MAX_PER_QUERY)
             for it in items:
@@ -226,8 +253,14 @@ def collect_once():
                     added += 1
         except Exception:
             errors += 1
-        time.sleep(2.0)  # 搜狗限频，2秒间隔
+        time.sleep(1.2)  # 搜狗限频
 
+    PROGRESS['done'] = total_queries
+    PROGRESS['added'] = added
+    PROGRESS['errors'] = errors
+    PROGRESS['running'] = False
+    PROGRESS['current'] = ''
+    PROGRESS['finished_at'] = database.now_str()
     database.log('collect', '新增 {} 条 / 查询 {} 组 / 错误 {}'.format(
         added, total_queries, errors), 'ok' if errors == 0 else 'warn')
     return added

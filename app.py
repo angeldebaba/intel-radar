@@ -6,6 +6,7 @@
 import json
 import os
 import re
+import threading
 from datetime import datetime, date
 from functools import wraps
 
@@ -302,8 +303,26 @@ def admin_analysis():
 @app.route('/api/admin/collect', methods=['POST'])
 @require_admin
 def admin_collect():
-    added = collector.collect_once()
-    return jsonify({'ok': True, 'added': added})
+    """异步启动采集：立即返回，后台线程执行，前端轮询 /api/admin/collect-status"""
+    if collector.PROGRESS['running']:
+        return jsonify({'ok': False, 'error': '采集正在进行中，请稍候'})
+    t = threading.Thread(target=_run_collect, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'msg': '采集已启动', 'total': collector.PROGRESS['total']})
+
+
+def _run_collect():
+    try:
+        collector.collect_once()
+    except Exception as e:
+        collector.PROGRESS['running'] = False
+        database.log('collect', '采集线程异常: {}'.format(e), 'error')
+
+
+@app.route('/api/admin/collect-status')
+@require_admin
+def admin_collect_status():
+    return jsonify({'ok': True, 'data': collector.collect_status()})
 
 
 @app.route('/api/admin/push-test', methods=['POST'])

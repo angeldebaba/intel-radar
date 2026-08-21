@@ -67,7 +67,7 @@ TAGS = ['技术', '方案', '政策', '竞品', '案例', '展会']
 # ===== 微信推送（PushPlus，免费） =====
 # 在 https://www.pushplus.plus/ 关注公众号后获取 token，填到后台"推送设置"或环境变量
 PUSHPLUS_TOKEN = os.environ.get('PUSHPLUS_TOKEN', '')
-PUSHPLUS_URL = 'http://www.pushplus.plus/send'
+PUSHPLUS_URL = 'https://www.pushplus.plus/send'
 
 # ===== 微信推送模板 =====
 PUSH_TOP_N = 3  # 每天推送条数
