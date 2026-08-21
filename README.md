@@ -40,26 +40,29 @@ python app.py
 
 ## 云端部署
 
-### 方案 A：Render.com（推荐，免费额度）
+### 方案 A：腾讯云 CloudBase 云托管（推荐，国内访问快，有免费额度）
 
-1. 注册 [render.com](https://render.com)（GitHub 登录）
-2. 创建 **Web Service**，连接本项目的 GitHub 仓库
-3. 配置：
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120`
-   - **Environment Variables**:
-     - `ADMIN_PASSWORD` = 你的后台密码
-     - `PUSHPLUS_TOKEN` = 你的 PushPlus token（也可后台填）
-     - `SECRET_KEY` = 随机字符串
-4. 部署完成后访问 `https://xxx.onrender.com`
-   - ⚠️ Render 免费层在无访问时会休眠，唤醒后调度任务可能延后。如需稳定每日 8 点推送，见方案 C
+项目已内置 `Dockerfile`，可直接从 GitHub 仓库一键部署：
 
-### 方案 B：Railway / Fly.io / PythonAnywhere
+1. **注册/登录** [腾讯云](https://cloud.tencent.com/)（微信扫码即可），完成**实名认证**
+2. 进入 [云开发 CloudBase 控制台](https://console.cloud.tencent.com/tcb)，创建环境（按量计费，有免费额度）
+3. 左侧进入 **云托管** → **新建服务**：
+   - **来源**：GitHub 仓库（首次需授权 CloudBase 访问你的 GitHub）
+   - **仓库**：`angeldebaba/intel-radar`，分支 `main`
+   - **构建**：自动识别 `Dockerfile`（无需改动）
+   - **端口**：`80`
+4. **环境变量**（服务配置里设置）：
+   - `ADMIN_PASSWORD` = 你的后台密码（如 `luban2026`，建议改掉）
+   - `PUSHPLUS_TOKEN` = 你的 PushPlus token（也可后台填）
+   - `SECRET_KEY` = 任意随机字符串
+   - `DATA_DIR` = `/data`（配合持久化卷）
+5. **持久化存储**（关键，否则重启丢数据）：
+   - 云托管服务详情 → **存储** → 新建并挂载**云硬盘**，挂载路径填 `/data`
+   - 这样 SQLite 数据库（`/data/radar.db`）永久保存
+6. 部署完成后访问：`https://<服务域名>.tcloudbaseapp.com`（控制台可绑定自定义域名）
+   - ⚠️ **实例数保持 1**（云托管默认），避免调度器重复采集/推送
 
-流程类似：连接仓库 → 安装依赖 → 启动 gunicorn → 配置环境变量。
-PythonAnywhere 免费层支持 Flask + 定时任务（Schedule 面板），适合国内访问。
-
-### 方案 C：自有 VPS（最稳定，推荐长期使用）
+### 方案 B：自有 VPS（最稳定，推荐长期使用）
 
 ```bash
 # 服务器上执行（以 Ubuntu 为例）
@@ -138,8 +141,9 @@ intel-radar/
 ├── templates/
 │   └── index.html  # 响应式前端（PC+手机）
 ├── requirements.txt
-├── Procfile        # 云平台启动配置
-└── run.bat         # Windows 本地启动
+├── Dockerfile     # CloudBase 云托管构建配置
+├── Procfile       # 通用云平台启动配置
+└── run.bat        # Windows 本地启动
 ```
 
 ## 常见问题
