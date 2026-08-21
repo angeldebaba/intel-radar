@@ -82,6 +82,22 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .empty-state .big{font-size:42px;margin-bottom:12px;}
 .empty-state .tip{font-size:13px;line-height:2;}
 
+/* ===== 趋势仪表盘 ===== */
+.dash-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px;}
+@media(min-width:900px){.dash-grid{grid-template-columns:1fr 1fr;}}
+.dash-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.dash-card h3{font-size:13.5px;color:var(--text2);font-weight:600;margin-bottom:12px;}
+.dash-card.collapsible .dash-toggle{background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;float:right;padding:0;}
+.hbar{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.hb-label{width:74px;font-size:12px;color:var(--text2);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.hb-track{flex:1;background:var(--bg3);border-radius:4px;height:14px;overflow:hidden;}
+.hb-fill{height:100%;background:linear-gradient(90deg,#58a6ff,#bc8cff);border-radius:4px;transition:width .4s;}
+.hb-num{font-size:11px;color:var(--text3);width:28px;flex-shrink:0;}
+.empty-mini{color:var(--text3);font-size:12.5px;padding:14px 0;text-align:center;}
+.tag-cloud{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px dashed rgba(48,54,61,.6);}
+.tag-cloud .t-chip{font-size:11.5px;padding:2px 10px;border-radius:12px;background:rgba(188,140,255,.13);color:#cba8ff;}
+.loading{grid-column:1/-1;text-align:center;color:var(--text3);padding:40px 0;font-size:13px;}
+
 /* ===== 登录 ===== */
 .login-wrap{max-width:380px;margin:60px auto;padding:30px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;}
 .login-wrap h2{margin-bottom:6px;font-size:19px;}
@@ -193,6 +209,19 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <div class="stats" id="statsBar"></div>
   </div>
 
+  <!-- 趋势仪表盘 -->
+  <div class="dash-grid" id="dashGrid">
+    <div class="dash-card">
+      <h3>📈 近 7 日采集趋势</h3>
+      <div id="chartTrend"><div class="empty-mini">暂无数据</div></div>
+    </div>
+    <div class="dash-card">
+      <h3>🏢 厂商情报分布 <span class="hint" style="font-weight:400">累计 Top 12</span></h3>
+      <div id="chartVendor"><div class="empty-mini">暂无数据</div></div>
+      <div class="tag-cloud" id="tagCloud"></div>
+    </div>
+  </div>
+
   <!-- 筛选栏 -->
   <div class="filters" id="filterBar">
     <span class="f-label">筛选</span>
@@ -204,6 +233,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
       <option value="4">★★★★ 4+</option>
       <option value="3">★★★ 3+</option>
     </select>
+    <select id="fSort"><option value="rel">相关度优先</option><option value="new">最新优先</option></select>
     <input type="text" id="fKeyword" placeholder="搜索关键词…">
     <button class="filter-clear" onclick="clearFilters()">✕ 清空</button>
   </div>
@@ -292,7 +322,9 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     </div>
     <div class="kv-grid" id="anStats"></div>
     <div class="panel">
-      <h3>⚠️ 潜在差距项 <span class="hint">友商有 / 大华清单未覆盖 · 相关度≥3</span></h3>
+      <h3>⚠️ 潜在差距项 <span class="hint">友商有 / 大华清单未覆盖 · 相关度≥3</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="window.open('/api/admin/analysis/export')">📥 导出完整报告</button>
+      </h3>
       <div id="anGaps"></div>
     </div>
     <div class="grid-2">
@@ -359,7 +391,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 </div><!-- /container -->
 
 <script>
-var state = { date: '', vendor: '', industry: '', tag: '', rel: '', keyword: '', isAdmin: false };
+var state = { date: '', vendor: '', industry: '', tag: '', rel: '', keyword: '', sort: 'rel', isAdmin: false };
 var DAY_MS = 86400000;
 
 function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -385,7 +417,51 @@ function initRoute(){
 }
 
 /* ===== 公开页 ===== */
-function loadAll(){ loadDates(); loadStats(); loadFilters(); loadIntelligence(); }
+function loadAll(){ loadDates(); loadStats(); loadFilters(); loadIntelligence(); loadTrend(); }
+
+/* ===== 趋势仪表盘 ===== */
+function loadTrend(){
+  api('/api/stats/trend').then(function(res){
+    if(!res.ok) return;
+    var d=res.data;
+    renderTrendChart(d.daily);
+    renderVendorChart(d.vendors);
+    var tc=document.getElementById('tagCloud');
+    tc.innerHTML = (d.tags||[]).slice(0,10).map(function(t){
+      return '<span class="t-chip">'+esc(t.tag)+' '+t.count+'</span>';
+    }).join('');
+  });
+}
+function renderTrendChart(daily){
+  var el=document.getElementById('chartTrend');
+  if(!daily || !daily.length){ el.innerHTML='<div class="empty-mini">暂无数据</div>'; return; }
+  var W=700,H=170,pad=14,base=130,maxH=95;
+  var max=Math.max.apply(null,daily.map(function(x){return x.count;}).concat([1]));
+  var n=daily.length, slot=(W-2*pad)/n, bw=slot*0.55;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block;">';
+  s+='<defs><linearGradient id="gT" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#58a6ff"/><stop offset="1" stop-color="#bc8cff"/></linearGradient></defs>';
+  s+='<line x1="'+pad+'" y1="'+base+'" x2="'+(W-pad)+'" y2="'+base+'" stroke="#30363d"/>';
+  daily.forEach(function(d,i){
+    var h=Math.max(Math.round(d.count/max*maxH), d.count>0?6:2);
+    var x=pad+slot*i+(slot-bw)/2, y=base-h;
+    s+='<rect x="'+x.toFixed(1)+'" y="'+y+'" width="'+bw.toFixed(1)+'" height="'+h+'" rx="3" fill="url(#gT)"/>';
+    s+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(y-6)+'" fill="#e6edf3" font-size="13" text-anchor="middle">'+d.count+'</text>';
+    s+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(base+17)+'" fill="#8b949e" font-size="12" text-anchor="middle">'+d.date.slice(5)+'</text>';
+  });
+  s+='</svg>';
+  el.innerHTML=s;
+}
+function renderVendorChart(vendors){
+  var el=document.getElementById('chartVendor');
+  if(!vendors || !vendors.length){ el.innerHTML='<div class="empty-mini">暂无数据</div>'; return; }
+  var max=vendors[0].c||1;
+  el.innerHTML=vendors.map(function(v){
+    var w=Math.max(Math.round(v.c/max*100),4);
+    return '<div class="hbar"><span class="hb-label" title="'+esc(v.vendor)+'">'+esc(v.vendor)+'</span>'+
+      '<div class="hb-track"><div class="hb-fill" style="width:'+w+'%"></div></div>'+
+      '<span class="hb-num">'+v.c+'</span></div>';
+  }).join('');
+}
 
 function loadDates(){
   api('/api/dates').then(function(res){
@@ -447,12 +523,16 @@ function loadIntelligence(){
   if(state.tag) qs+='&tag='+encodeURIComponent(state.tag);
   if(state.rel) qs+='&relevance='+state.rel;
   if(state.keyword) qs+='&q='+encodeURIComponent(state.keyword);
+  var grid=document.getElementById('intelGrid'), empty=document.getElementById('emptyState');
+  grid.innerHTML='<div class="loading">📡 正在加载情报…</div>';
+  empty.classList.add('hidden');
   api('/api/intelligence'+qs).then(function(res){
-    var grid=document.getElementById('intelGrid'), empty=document.getElementById('emptyState');
     if(!res.ok || !res.data.length){ grid.innerHTML=''; empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-    grid.innerHTML = res.data.map(cardHtml).join('');
-  });
+    var list=res.data.slice();
+    if(state.sort==='new'){ list.sort(function(a,b){ return b.id-a.id; }); }
+    grid.innerHTML = list.map(cardHtml).join('');
+  }).catch(function(){ grid.innerHTML=''; empty.classList.remove('hidden'); });
 }
 function cardHtml(it){
   var stars='', i;
@@ -757,6 +837,7 @@ document.getElementById('fVendor').addEventListener('change',function(){ state.v
 document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; loadIntelligence(); });
 document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; loadIntelligence(); });
 document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; loadIntelligence(); });
+document.getElementById('fSort').addEventListener('change',function(){ state.sort=this.value; loadIntelligence(); });
 var kwTimer;
 document.getElementById('fKeyword').addEventListener('input',function(){
   clearTimeout(kwTimer); var me=this;
