@@ -711,10 +711,11 @@ function runDiagnose(){
     }
     var d=res.data;
     var html='<div class="msg" style="white-space:pre-wrap;line-height:1.8;"><b>诊断结果：'+esc(d.query)+'</b><br>';
+    var names={official:'官网', sogou:'搜狗', bing:'必应', baidu:'百度'};
     for(var src in d.sources){
       var s=d.sources[src];
       var cnt = (typeof s.count==='number') ? s.count : (s.error ? 0 : '未知');
-      html+='【'+src+'】返回 '+cnt+' 条';
+      html+='【'+(names[src]||src)+'】返回 '+cnt+' 条';
       if(s.error) html+=' <span style="color:var(--red)">错误：'+esc(s.error)+'</span>';
       html+='<br>';
       (s.samples||[]).forEach(function(x){
