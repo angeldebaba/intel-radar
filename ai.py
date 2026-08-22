@@ -27,11 +27,14 @@ SYSTEM_PROMPT = (
     '凑热点的营销软文等）→ keep=false, score 0-1\n'
     '   - 泛安防/物联网内容但与孪生可视化沾边 → score 2\n'
     '   - 明确涉及孪生/三维可视化产品、方案、案例、政策 → score 3-5\n'
-    '2. 用不超过 80 个汉字提炼该条情报的核心内容（谁发布了什么产品/方案/项目/政策，'
-    '关键数字与亮点），不要泛泛而谈，没有摘要就基于标题提炼。\n'
+    '2. 为每条写一段 120~200 个汉字的「情报速览」，让读者不用点开原文就能了解全貌。'
+    '结构：①核心事件（谁发布/建成了什么，何时何地）；②关键细节（规模、数字、'
+    '技术亮点、合作伙伴、应用场景）；③行业意义（对数字孪生/视频融合赛道意味着什么，一句话）。'
+    '只依据标题与摘要中真实存在的信息，禁止编造数字和事实；信息不足时可基于标题合理概述，'
+    '原文信息极少时也要写足 120 字的行业背景解读。\n'
     '严格输出 JSON 数组（不要 markdown 代码块），每项格式：\n'
     '{"id": 编号, "keep": true/false, "score": 0-5, '
-    '"summary": "提炼后的核心内容", "tags": ["最多2个，从 技术/方案/政策/竞品/案例/展会 中选"]}\n'
+    '"summary": "情报速览（120~200字）", "tags": ["最多3个，从 技术/方案/政策/竞品/案例/展会 中选"]}\n'
     '数组顺序与输入一致，一条不能少。'
 )
 
@@ -49,7 +52,7 @@ def _chat(messages, timeout=90):
         json={'model': MODEL,
               'messages': messages,
               'temperature': 0.2,
-              'max_tokens': 2000},
+              'max_tokens': 4000},
         timeout=timeout)
     resp.raise_for_status()
     return resp.json()['choices'][0]['message']['content']
@@ -106,8 +109,8 @@ def analyze_batch(items):
                 results[idx] = {
                     'keep': bool(obj.get('keep', True)),
                     'score': max(0, min(5, int(obj.get('score', 3)))),
-                    'summary': str(obj.get('summary') or '')[:200],
-                    'tags': [str(t)[:10] for t in (obj.get('tags') or [])][:2],
+                    'summary': str(obj.get('summary') or '')[:400],
+                    'tags': [str(t)[:10] for t in (obj.get('tags') or [])][:3],
                 }
             if all(r is not None for r in results):
                 return results
