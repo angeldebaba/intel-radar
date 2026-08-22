@@ -97,7 +97,13 @@ def api_stats_trend():
 
 @app.route('/api/intelligence')
 def api_intelligence():
-    """情报列表，支持 date/vendor/industry/tag/relevance/fav/q 过滤 + 分页"""
+    """情报列表：支持 vendor/industry/tag/relevance/fav/q 过滤 + 滚动游标分页。
+
+    - 首次请求（无 cursor）：按 date 过滤（默认今天）返回第一页 + next_cursor
+    - 带 cursor 请求：自动去掉日期过滤，跨日期加载更早记录（滚动增量加载）：
+        sort=new → 按 (date, id) 游标，新→旧
+        sort=rel → 按 (relevance, id) 游标，相关度高→低
+    """
     where, args = [], []
     d = request.args.get('date') or database.today_str()
     vendor = request.args.get('vendor', '')
@@ -106,9 +112,9 @@ def api_intelligence():
     relevance = request.args.get('relevance', '')
     fav = request.args.get('fav', '')
     keyword = request.args.get('q', '')
+    cursor = request.args.get('cursor', '')
+    sort = request.args.get('sort', 'rel')
 
-    where.append('date=?')
-    args.append(d)
     if vendor:
         where.append('vendor=?')
         args.append(vendor)
@@ -127,28 +133,57 @@ def api_intelligence():
         where.append('(title LIKE ? OR summary LIKE ?)')
         args.extend(['%{}%'.format(keyword)] * 2)
 
-    # 分页
-    try:
-        page = max(1, int(request.args.get('page', 1)))
-    except ValueError:
-        page = 1
-    try:
-        page_size = min(100, max(1, int(request.args.get('page_size', 12))))
-    except ValueError:
-        page_size = 12
-    offset = (page - 1) * page_size
-    where_sql = ' AND '.join(where)
+    if sort == 'new':
+        order_sql = 'date DESC, id DESC'
+    else:
+        sort = 'rel'
+        order_sql = 'relevance DESC, id DESC'
 
-    total = database.query_one(
-        'SELECT COUNT(*) AS c FROM intelligence WHERE ' + where_sql, tuple(args))['c']
+    if cursor:
+        # 滚动加载：去掉日期过滤，按游标跨日期取更早/更低优先级的记录
+        try:
+            key, last_id = cursor.rsplit('_', 1)
+            last_id = int(last_id)
+        except ValueError:
+            return jsonify({'ok': False, 'error': 'cursor 格式错误'}), 400
+        if sort == 'new':
+            where.append('(date<? OR (date=? AND id<?))')
+            args.extend([key, key, last_id])
+        else:
+            key = int(key)
+            where.append('(relevance<? OR (relevance=? AND id<?))')
+            args.extend([key, key, last_id])
+    else:
+        where.append('date=?')
+        args.append(d)
+
+    try:
+        page_size = min(50, max(1, int(request.args.get('page_size', 8))))
+    except ValueError:
+        page_size = 8
+
+    where_sql = ' AND '.join(where)
     rows = database.query(
-        'SELECT * FROM intelligence WHERE {} ORDER BY relevance DESC, id DESC LIMIT {} OFFSET {}'
-        .format(where_sql, page_size, offset), tuple(args))
+        'SELECT * FROM intelligence WHERE {} ORDER BY {} LIMIT {}'.format(
+            where_sql, order_sql, page_size + 1), tuple(args))
+    has_more = len(rows) > page_size
+    rows = rows[:page_size]
+    next_cursor = ''
+    if has_more and rows:
+        last = rows[-1]
+        key = last['date'] if sort == 'new' else str(last['relevance'])
+        next_cursor = '{}_{}'.format(key, last['id'])
     for r in rows:
         r['tags'] = json.loads(r['tags'] or '[]')
-    return jsonify({'ok': True, 'data': rows, 'page': page,
-                    'page_size': page_size, 'total': total,
-                    'total_pages': max(1, (total + page_size - 1) // page_size)})
+
+    # 首页才统计总数（按当日 + 筛选条件；此时 where 末位即 date=?，参数顺序一致）
+    total = 0
+    if not cursor:
+        total = database.query_one(
+            'SELECT COUNT(*) AS c FROM intelligence WHERE ' + where_sql,
+            tuple(args))['c']
+    return jsonify({'ok': True, 'data': rows, 'total': total,
+                    'next_cursor': next_cursor, 'has_more': has_more})
 
 
 @app.route('/api/filters')
@@ -527,7 +562,7 @@ def admin_settings_save():
 @require_admin
 def admin_logs():
     try:
-        rows = database.query('SELECT * FROM collect_log ORDER BY id DESC LIMIT 30')
+        rows = database.query('SELECT * FROM collect_log ORDER BY id DESC LIMIT 100')
         return jsonify({'ok': True, 'data': rows})
     except Exception as e:
         database.log('system', '读取日志失败: {}'.format(e), 'error')
