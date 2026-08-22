@@ -19,6 +19,7 @@ import config
 import database
 import collector
 import pusher
+import ai
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -479,6 +480,97 @@ def _run_collect():
         database.log('collect', '采集线程异常: {}'.format(e), 'error')
     finally:
         database.backup_db()
+
+
+# -------- 数据整理（存量摘要升级 + 垃圾清理） --------
+REPROCESS = {'running': False, 'total': 0, 'done': 0, 'updated': 0,
+             'deleted': 0, 'failed': 0, 'finished_at': '', 'log': []}
+
+
+def _run_reprocess():
+    """后台线程：对存量短摘要(<100字)重跑 AI 速览；无正文/低分条目直接清理"""
+    st = REPROCESS
+    st.update(running=True, total=0, done=0, updated=0, deleted=0,
+              failed=0, finished_at='', log=[])
+    try:
+        # 第一步：清理无正文垃圾（导航页/聚合页/空壳页）
+        rows = database.query(
+            "SELECT id, title FROM intelligence WHERE length(coalesce(description,'')) < 60")
+        for r in rows:
+            database.execute('DELETE FROM intelligence WHERE id=?', (r['id'],))
+            st['deleted'] += 1
+        st['log'].append('清理无正文条目: {} 条'.format(len(rows)))
+
+        # 第二步：AI 重跑短摘要
+        rows = database.query(
+            'SELECT id, title, summary, description, vendor, tags '
+            'FROM intelligence WHERE length(summary) < 100 ORDER BY id')
+        st['total'] = len(rows)
+        if rows and not ai.enabled():
+            st['log'].append('未配置 AI_API_KEY，跳过摘要升级')
+            rows = []
+        batch = 15
+        for start in range(0, len(rows), batch):
+            chunk = rows[start:start + batch]
+            items = []
+            for r in chunk:
+                text = r['description'] or ''
+                if len(text) < len(r['summary'] or ''):
+                    text = r['summary'] or ''
+                items.append({'title': r['title'], 'summary': text,
+                              'vendor': r['vendor']})
+            res = ai.analyze_batch(items)
+            if res is None:
+                st['failed'] += len(chunk)
+                st['done'] += len(chunk)
+                continue
+            for i, r in enumerate(chunk):
+                x = res[i] or {}
+                score = x.get('score', 3)
+                if (not x.get('keep', True)) or score < config.AI_MIN_SCORE:
+                    database.execute('DELETE FROM intelligence WHERE id=?',
+                                     (r['id'],))
+                    st['deleted'] += 1
+                else:
+                    new_sum = (x.get('summary') or '').strip() or r['summary']
+                    new_tags = x.get('tags') or json.loads(r['tags'] or '[]')
+                    database.execute(
+                        'UPDATE intelligence SET summary=?, tags=?, relevance=? '
+                        'WHERE id=?',
+                        (new_sum, json.dumps(new_tags, ensure_ascii=False),
+                         score, r['id']))
+                    st['updated'] += 1
+                st['done'] += 1
+            st['log'].append('已处理 {}/{}'.format(st['done'], st['total']))
+        database.log('collect', '数据整理完成: 升级{}条 清理{}条'.format(
+            st['updated'], st['deleted']))
+        st['log'].append('完成：升级 {} 条，清理 {} 条'.format(
+            st['updated'], st['deleted']))
+    except Exception as e:
+        st['log'].append('出错: {}'.format(e))
+        database.log('collect', '数据整理异常: {}'.format(e), 'warn')
+    finally:
+        st['running'] = False
+        st['finished_at'] = database.now_str()
+
+
+@app.route('/api/admin/reprocess', methods=['POST'])
+@require_admin
+def admin_reprocess():
+    """启动数据整理（后台线程），前端轮询 /api/admin/reprocess-status"""
+    if REPROCESS['running']:
+        return jsonify({'ok': False, 'error': '数据整理正在进行中'})
+    if collector.PROGRESS['running']:
+        return jsonify({'ok': False, 'error': '采集正在进行中，请等采集结束后再整理'})
+    t = threading.Thread(target=_run_reprocess, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'msg': '数据整理已启动'})
+
+
+@app.route('/api/admin/reprocess-status')
+@require_admin
+def admin_reprocess_status():
+    return jsonify({'ok': True, 'data': REPROCESS})
 
 
 @app.route('/api/admin/collect-status')
