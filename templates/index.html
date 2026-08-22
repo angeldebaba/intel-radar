@@ -770,14 +770,19 @@ function saveSettings(){
   });
 }
 var _collectTimer=null;
-function manualCollect(){
+function manualCollect(force){
+  force = force===true;
   var b=document.getElementById('btnCollect');
   b.disabled=true; b.textContent='采集中…';
   document.getElementById('opMsg').innerHTML='<span class="msg">采集已启动，正在后台抓取各厂商情报（约2-3分钟）…</span>';
-  api('/api/admin/collect',{method:'POST'}).then(function(res){
+  api('/api/admin/collect'+(force?'?force=1':''),{method:'POST'}).then(function(res){
     if(!res.ok){
       b.disabled=false; b.textContent='🔍 立即采集';
-      document.getElementById('opMsg').innerHTML='<span class="msg err">'+(res.error||res.msg||'启动失败')+'</span>';
+      var msg = res.error||res.msg||'启动失败';
+      if(msg.indexOf('冷却')>=0){
+        msg += ' <a href="javascript:void(0)" style="text-decoration:underline" onclick="manualCollect(true)">强制采集</a>';
+      }
+      document.getElementById('opMsg').innerHTML='<span class="msg err">'+msg+'</span>';
       return;
     }
     // 轮询进度
