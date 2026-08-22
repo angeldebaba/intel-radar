@@ -109,6 +109,33 @@ def discover_env():
     return env['EnvId']
 
 
+def deploy_records(env_id):
+    """返回部署记录列表（时间升序，最新的在末尾）；失败返回 None"""
+    r = tcbr('DescribeCloudRunDeployRecord',
+             {'EnvId': env_id, 'ServerName': SERVER_NAME})
+    if r.get('Error'):
+        return None
+    return r.get('DeployRecords') or []
+
+
+def wait_running_deploy(env_id, max_wait_min=10):
+    """若已有部署正在进行（running/deploying），先等它结束再触发，避免并发构建堆叠。"""
+    waited = 0
+    while waited < max_wait_min * 60:
+        recs = deploy_records(env_id)
+        if not recs:
+            return
+        latest = recs[-1]
+        low = (latest.get('Status') or '').lower()
+        if low not in ('running', 'deploying', 'building', 'create'):
+            return
+        print('已有部署进行中(状态=%s, RunId=%s)，等待其结束... (%ds)' % (
+            latest.get('Status'), latest.get('RunId'), waited))
+        time.sleep(20)
+        waited += 20
+    die('⏰ 等待前序部署超时（%d 分钟），请到控制台查看服务 %s' % (max_wait_min, SERVER_NAME))
+
+
 def main():
     for k in ('TENCENT_SECRET_ID', 'TENCENT_SECRET_KEY', 'TCB_SERVER_NAME'):
         if not os.environ.get(k):
@@ -117,6 +144,9 @@ def main():
     env_id = ENV_ID or discover_env()
     remark = ('CI deploy %s' % COMMIT) if COMMIT else 'CI deploy'
     print('目标环境: %s 服务: %s 仓库: %s@%s' % (env_id, SERVER_NAME, REPO, BRANCH))
+
+    # 并发防护：等前序部署结束再触发（webhook 双投递/重复运行的教训）
+    wait_running_deploy(env_id)
 
     payload = {
         'EnvId': env_id,
@@ -134,29 +164,19 @@ def main():
     print('部署任务已提交: %s' % json.dumps(resp, ensure_ascii=False)[:300])
 
     # 记住触发前的最新部署号，之后只看"新出现"的记录（记录按时间升序，最新的在末尾）
-    def _newest_deploy_id():
-        r = tcbr('DescribeCloudRunDeployRecord',
-                 {'EnvId': env_id, 'ServerName': SERVER_NAME})
-        if r.get('Error'):
-            return None, []
-        recs = r.get('DeployRecords') or []
-        if not recs:
-            return None, []
-        return recs[-1], recs
-
-    base_rec, _ = _newest_deploy_id()
-    base_id = base_rec.get('DeployId') if base_rec else ''
+    base_recs = deploy_records(env_id)
+    base_id = (base_recs[-1].get('DeployId') if base_recs else '') or ''
 
     # 轮询部署记录：只观察比 base_id 更新的记录，避免误读旧记录的 normal 状态
     deadline = time.time() + TIMEOUT_MIN * 60
     last = ''
     while time.time() < deadline:
         time.sleep(20)
-        rec, records = _newest_deploy_id()
-        if rec is None:
+        records = deploy_records(env_id)
+        if records is None:
             print('查询部署记录失败（继续轮询）')
             continue
-        if rec.get('DeployId') == base_id and not records:
+        if not records:
             continue
         # 过滤出本次触发产生的新记录
         new_records = [x for x in records
