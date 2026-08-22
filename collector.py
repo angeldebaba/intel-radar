@@ -92,21 +92,37 @@ def _clean_text(s):
     return s
 
 
-def _extract_og_image(html_text):
-    """从文章页提取 og:image 或正文首图，限定 jpg/png/webp"""
+def _extract_og_image(html_text, base_url=''):
+    """从文章页提取 og:image 或正文首图，限定 jpg/png/webp。
+    兜底首图优先取与页面同注册域的（防轮播广告图被当首图引入域名白名单）。"""
     if not html_text:
         return ''
-    m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.I)
-    if m:
-        return m.group(1).strip()
-    m = re.search(r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.I)
-    if m:
-        return m.group(1).strip()
-    # 取正文首张图片
-    m = re.search(r'<img[^>]+src=["\'](https?://[^"\']+\.(?:jpg|jpeg|png|webp))["\']', html_text, re.I)
-    if m:
-        return m.group(1).strip()
-    return ''
+    # meta 提取（og:image / twitter:image）：站点的默认占位图/logo 也算噪音，降级走兜底
+    for meta_pat in (
+            r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']'):
+        m = re.search(meta_pat, html_text, re.I)
+        if not m:
+            continue
+        u = m.group(1).strip()
+        low = u.lower()
+        if any(n in low for n in _IMG_NOISE) or any(p in low for p in _IMG_PATH_NOISE):
+            continue
+        return u
+    # 兜底：取正文首张干净图（跳过 logo/图标/皮肤目录），同注册域优先
+    page_d = _reg_domain(urlparse(base_url).netloc) if base_url else ''
+    same_d, first = '', ''
+    for m in re.finditer(r'<img[^>]+src=["\'](https?://[^"\']+\.(?:jpg|jpeg|png|webp))["\']', html_text, re.I):
+        u = m.group(1).strip()
+        low = u.lower()
+        if any(n in low for n in _IMG_NOISE) or any(p in low for p in _IMG_PATH_NOISE):
+            continue
+        if not first:
+            first = u
+        if page_d and _reg_domain(urlparse(u).netloc) == page_d:
+            same_d = u
+            break
+    return same_d or first
 
 
 def _enrich_article_image(item, timeout=6):
@@ -120,7 +136,7 @@ def _enrich_article_image(item, timeout=6):
         resp = _request_get(url, timeout=timeout, referer='https://www.sogou.com/')
         if not resp:
             return
-        img = _extract_og_image(resp.text[:200000])
+        img = _extract_og_image(resp.text[:200000], resp.url)
         if img and img.startswith('http'):
             item['image'] = img
     except Exception:
@@ -132,7 +148,41 @@ def _enrich_article_image(item, timeout=6):
 # 图片噪音特征：logo/图标/头像/表情/二维码/精灵图等
 _IMG_NOISE = ('logo', 'icon', 'sprite', 'avatar', 'emoji', 'qrcode', 'wechat',
               'share_', 'button', 'banner_ad', 'ad_', 'pixel', 'spacer',
-              'loading', 'placeholder', 'blank', 'default', '1x1', 'beacon')
+              'loading', 'placeholder', 'blank', 'default', '1x1', 'beacon',
+              'symbol', 'cert', 'scan.', 'badge', 'medal')
+
+# 图片噪音路径（目录级，比文件名更稳）：皮肤/样式/模板/控件目录全是非正文图
+_IMG_PATH_NOISE = ('/skin/', '/css/', '/style/', '/templates/', '/widget/',
+                   '/common/', '/images/logo', '/ads/', '/ad/', '/emoji/')
+
+# 常见二级 TLD（注册域需取三段，如 xxx.com.cn）
+_DOUBLE_TLDS = {'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
+                'com.hk', 'com.tw', 'co.jp', 'com.au', 'co.uk', 'com.sg'}
+
+
+def _reg_domain(host):
+    """取注册域（主域）：news.ikanchai.com -> ikanchai.com；a.b.com.cn -> b.com.cn"""
+    host = (host or '').lower().strip('.')
+    if not host:
+        return ''
+    parts = host.split('.')
+    if len(parts) >= 3 and '.'.join(parts[-2:]) in _DOUBLE_TLDS:
+        return '.'.join(parts[-3:])
+    return '.'.join(parts[-2:]) if len(parts) >= 2 else host
+
+
+def _filter_foreign_imgs(imgs, base_url, og_url=''):
+    """剔除与页面不同注册域的图床图（轮播广告/推荐位常用独立投放域）。
+    全部跨域时原样返回——图片独立托管在图床的正规站（阿里云建站等）不误伤。"""
+    if not imgs:
+        return imgs
+    page_d = _reg_domain(urlparse(base_url).netloc) if base_url else ''
+    og_d = _reg_domain(urlparse(og_url).netloc) if og_url else ''
+    if not page_d:
+        return imgs
+    allowed = {d for d in (page_d, og_d) if d}
+    kept = [u for u in imgs if _reg_domain(urlparse(u).netloc) in allowed]
+    return kept if kept else imgs
 
 # 支持内嵌播放的视频平台（iframe src 域名特征）
 _VIDEO_EMBED_HOSTS = ('player.bilibili.com', 'www.bilibili.com/video',
@@ -252,7 +302,7 @@ def _extract_media(html_text, base_url):
 
     # ---- 图片：og:image 优先 ----
     imgs = []
-    og = _extract_og_image(text)
+    og = _extract_og_image(text, base_url)
     if og:
         og = _norm_media_url(og, base_url)
         if og:
@@ -270,10 +320,12 @@ def _extract_media(html_text, base_url):
         if not src:
             continue
         low = src.lower()
-        # 过滤：动图表情/图标特征/明显小图
+        # 过滤：动图表情/图标特征/皮肤目录/明显小图
         if low.endswith('.gif') or 'data:image' in low:
             continue
         if any(n in low for n in _IMG_NOISE):
+            continue
+        if any(p in low for p in _IMG_PATH_NOISE):
             continue
         # width/height 属性明显过小的跳过（图标/占位）
         mw = re.search(r'width=["\']?(\d+)', u, re.I)
@@ -287,6 +339,8 @@ def _extract_media(html_text, base_url):
         if u and u not in seen:
             seen.add(u)
             out['images'].append(u)
+    # 跨域过滤：剔除与页面/og 不同注册域的图（轮播广告/推荐位常用独立投放域）
+    out['images'] = _filter_foreign_imgs(out['images'], base_url, og)
     return out
 
 
@@ -445,7 +499,7 @@ def _enrich_article_media(item, timeout=6):
             base = resp.url
             media = _extract_media(page, base)
             # og:image 已是精选缩略图候选，保底进 images 首位
-            og = _norm_media_url(_extract_og_image(page[:200000]), base)
+            og = _norm_media_url(_extract_og_image(page[:200000], base), base)
             if og and og not in media['images']:
                 media['images'].insert(0, og)
         # 正文没有视频时追溯外链（微信等 JS 渲染页、页面抓取失败均走这条路）
