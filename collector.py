@@ -142,6 +142,58 @@ _VIDEO_EMBED_HOSTS = ('player.bilibili.com', 'www.bilibili.com/video',
 
 _VIDEO_EXT = ('.mp4', '.webm', '.m3u8', '.mov')
 
+# 正文外链追溯：跳过这些域名（搜索引擎/微信系/社交平台/CDN，追了也提不到视频）
+_REF_SKIP_HOSTS = ('sogou.com', 'baidu.com', 'bing.com', 'google.', 'so.com', '360.cn',
+                   'qq.com', 'qpic.cn', 'weibo.com', 'zhihu.com', 'csdn.net',
+                   'toutiao.com', 'douyin.com', 'kuaishou.com', 'github.com',
+                   'gitee.com', 'youtube.com', 'facebook.com', 'twitter.com', 'x.com',
+                   'w3.org', 'gov.cn', 'edu.cn', 'mil.cn', 'cdn-static-pages',
+                   'weixinbridge.com', 'unpkg.com', 'jsdelivr.net', 'cdnjs.cloudflare.com',
+                   'bootcdn.net', 'staticfile.org')
+# 静态资源后缀：这些"链接"是脚本/样式/字体，追了也没媒体
+_REF_SKIP_EXT = ('.js', '.css', '.json', '.woff', '.woff2', '.ttf', '.eot', '.svg',
+                 '.ico', '.xml', '.txt', '.rss')
+# 视频页直判：正文提到这些平台的视频页链接时无需抓页面，直接转 embed 播放器
+_VIDEO_PAGE_PATTERNS = (
+    (r'bilibili\.com/video/(BV[\w]+)',
+     'https://player.bilibili.com/player.html?bvid=%s&autoplay=0'),
+    (r'v\.qq\.com/x/(?:page|cover)/(\w+)',
+     'https://v.qq.com/txp/iframe/player.html?vid=%s'),
+)
+
+
+def _unescape_js(text):
+    """解码 document.write JS 里的 \\uXXXX / \\xXX 转义，还原成 HTML 文本"""
+    if not text:
+        return ''
+
+    def _rep(m):
+        return chr(int(m.group(1), 16))
+    text = re.sub(r'\\u([0-9a-fA-F]{4})', _rep, text)
+    text = re.sub(r'\\x([0-9a-fA-F]{2})', _rep, text)
+    return text.replace('\\"', '"').replace("\\'", "'")
+
+
+def _expand_accel_shell(resp):
+    """破解"网站加速"反爬壳（阿里云云速建站等）：
+    真实页面只返回几百字节空壳 + <script src='.../xxx.Body.js'>（document.write 全量内容）。
+    命中时抓 Body.js 并解码还原真实 HTML；否则原样返回 resp.text。"""
+    text = resp.text or ''
+    if len(text) > 4000:
+        return text
+    m = re.search(r'<script[^>]+src=[\'"]([^\'"]*cdn-static-pages[^\'"]*Body\.js[^\'"]*)[\'"]',
+                  text, re.I)
+    if not m:
+        return text
+    try:
+        r2 = _request_get(m.group(1), timeout=8, referer=resp.url, retries=1)
+        if not r2:
+            return text
+        expanded = _unescape_js(r2.text)
+        return expanded if len(expanded) > len(text) else text
+    except Exception:
+        return text
+
 
 def _norm_media_url(u, base_url):
     """规范化媒体链接：相对路径转绝对；无效返回 ''"""
@@ -278,20 +330,127 @@ def _validate_media(media):
     return media
 
 
+def _merge_media(dst, src):
+    """把 src 的图片/视频合并进 dst（按 URL 去重，保序）"""
+    if not src:
+        return dst
+    known = set(v['url'] for v in dst.get('videos', [])) | set(dst.get('images', []))
+    for v in src.get('videos', []):
+        if v.get('url') and v['url'] not in known:
+            known.add(v['url'])
+            dst.setdefault('videos', []).append(v)
+    for img in src.get('images', []):
+        if img and img not in known:
+            known.add(img)
+            dst.setdefault('images', []).append(img)
+    return dst
+
+
+def _follow_referenced_media(item, article_html, base_url, timeout=6):
+    """方案A：追溯文章正文/摘要里提到的外部链接（公司官网/产品页），提取视频/图片。
+
+    微信等 JS 渲染页静态 HTML 提不到媒体，但正文常提到官网，
+    而官网产品页往往藏着宣传视频（含"网站加速"壳内 mp4）。"""
+    out = {'images': [], 'videos': []}
+    cand, seen_host = [], set()
+
+    def _add(raw):
+        u = (raw or '').strip()
+        # 结尾省略号 = 搜索摘要截断的残缺 URL，跳过
+        if u.endswith('..') or u.endswith('…'):
+            return
+        u = u.rstrip('.,;，。；)）】》>')
+        if not u.startswith('http'):
+            return
+        # 静态资源（脚本/样式/字体）不是内容页，跳过
+        path = u.split('?')[0].split('#')[0].lower()
+        if path.endswith(_REF_SKIP_EXT):
+            return
+        try:
+            host = urlparse(u).netloc.lower()
+        except Exception:
+            return
+        # 需要像样的域名（带合法 TLD），排除搜索引擎/社交/微信系噪音站
+        if not host or not re.search(r'\.[a-zA-Z]{2,}$', host):
+            return
+        if any(h in host for h in _REF_SKIP_HOSTS):
+            return
+        if host in seen_host:
+            return
+        seen_host.add(host)
+        cand.append(u)
+
+    # 候选按可靠性分级（先入队先追溯，名额有限）：
+    # ① 摘要/描述里的裸 URL——搜索摘要明确提到的官网，最可靠
+    # ② 正文 a 链接——作者主动放的引用
+    # ③ 正文裸 URL——噪音最多（JS 里的统计/CDN 地址），垫底
+    for src in (item.get('description') or '', item.get('summary') or ''):
+        for m in re.finditer(r'https?://[\w.\-]+(?:/[\w.\-/%?=&#]*)?', src):
+            _add(m.group(0))
+    if article_html:
+        for m in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\']', article_html, re.I):
+            _add(m.group(1))
+    if article_html:
+        for m in re.finditer(r'https?://[\w.\-]+(?:/[\w.\-/%?=&#]*)?', article_html):
+            _add(m.group(0))
+
+    if not cand:
+        return out
+    cand = cand[:config.MEDIA_FOLLOW_LINKS]
+
+    for u in cand:
+        # 视频平台视频页直判：链接本身就是视频页，转 embed 无需抓取
+        hit_embed = False
+        for pat, tpl in _VIDEO_PAGE_PATTERNS:
+            m2 = re.search(pat, u)
+            if m2:
+                embed = tpl % m2.group(1)
+                if embed not in [v['url'] for v in out['videos']]:
+                    out['videos'].append({'url': embed, 'type': 'embed'})
+                hit_embed = True
+                break
+        if hit_embed:
+            continue
+        # 抓引用页提取媒体（含"网站加速"壳自动展开）
+        try:
+            resp = _request_get(u, timeout=timeout, referer=base_url, retries=1)
+            if not resp:
+                continue
+            page = _expand_accel_shell(resp)
+            _merge_media(out, _extract_media(page, resp.url))
+        except Exception:
+            continue
+        if len(out['videos']) >= config.MEDIA_MAX_VIDEOS:
+            break
+    out['videos'] = out['videos'][:config.MEDIA_MAX_VIDEOS]
+    out['images'] = out['images'][:config.MEDIA_MAX_IMAGES]
+    return out
+
+
 def _enrich_article_media(item, timeout=6):
-    """抓文章页提取缩略图 + 正文图片/视频（含有效性校验），写入 item['image']/item['media']"""
+    """抓文章页提取缩略图 + 正文图片/视频（含有效性校验），写入 item['image']/item['media']。
+
+    - 命中"网站加速"反爬壳时自动抓 Body.js 还原真实页面再提取
+    - 正文提不到视频时，追溯正文/描述里提到的外部官网链接补媒体
+    """
     url = item.get('url', '')
     if not url.startswith('http'):
         return
     try:
         resp = _request_get(url, timeout=timeout, referer='https://www.sogou.com/')
-        if not resp:
-            return
-        media = _extract_media(resp.text, resp.url)
-        # og:image 已是精选缩略图候选，保底进 images 首位
-        og = _norm_media_url(_extract_og_image(resp.text[:200000]), resp.url)
-        if og and og not in media['images']:
-            media['images'].insert(0, og)
+        page, base = ('', url)
+        media = {'images': [], 'videos': []}
+        if resp:
+            page = _expand_accel_shell(resp)
+            base = resp.url
+            media = _extract_media(page, base)
+            # og:image 已是精选缩略图候选，保底进 images 首位
+            og = _norm_media_url(_extract_og_image(page[:200000]), base)
+            if og and og not in media['images']:
+                media['images'].insert(0, og)
+        # 正文没有视频时追溯外链（微信等 JS 渲染页、页面抓取失败均走这条路）
+        if not media['videos']:
+            _merge_media(media, _follow_referenced_media(item, page, base, timeout=timeout))
         if not media['images'] and not media['videos']:
             return
         media = _validate_media(media)

@@ -51,6 +51,8 @@ MEDIA_MAX_IMAGES = int(os.environ.get('MEDIA_MAX_IMAGES', '4'))
 MEDIA_MAX_VIDEOS = int(os.environ.get('MEDIA_MAX_VIDEOS', '2'))
 # 媒体链接有效性校验超时（秒）
 MEDIA_CHECK_TIMEOUT = int(os.environ.get('MEDIA_CHECK_TIMEOUT', '5'))
+# 正文外链追溯：文章/描述提到的外部官网，最多追几个链接提取媒体（每个多 1-2 次请求）
+MEDIA_FOLLOW_LINKS = int(os.environ.get('MEDIA_FOLLOW_LINKS', '2'))
 
 
 # 厂商列表：name=中文名, key=搜索关键词（多个组合）
