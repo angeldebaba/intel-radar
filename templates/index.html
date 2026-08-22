@@ -61,8 +61,8 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 /* 带图卡片：头图横幅式（图铺满卡顶），与纯文字卡片形成错落对比 */
 .intel-card.has-image{padding:0;overflow:hidden;gap:0;}
 .intel-card.has-image .card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;padding:13px 16px 14px;}
-.card-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--bg3);display:block;border-radius:0;flex-shrink:0;max-height:420px;}
-/* 图片加载后由 fitThumb() 按实际宽高比设置 aspect-ratio（限幅 1.4~2.6），加载前 16/9 只是预占位 */
+.card-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;object-position:center;background:var(--bg3);display:block;border-radius:0;flex-shrink:0;max-height:200px;}
+/* 图片加载后由 fitThumb() 按实际宽高比设置 aspect-ratio（限幅 1.6~2.4），加载前 16/9 只是预占位；max-height 200px 是硬上限，保证头图不主导卡片 */
 .card-top{display:flex;align-items:flex-start;gap:10px;}
 .card-badge{display:flex;flex-direction:column;align-items:center;min-width:34px;gap:2px;}
 .rel-stars{color:var(--orange);font-size:11px;letter-spacing:-1px;white-space:nowrap;}
@@ -774,13 +774,14 @@ function toggleFav(id,btn){
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 function jsq(s){ return esc(s).replace(/'/g,'\\x27'); }  // URL 内嵌 onclick 字符串参数用
 /* 头图按实际宽高比自适应：加载后读 naturalWidth/Height 设 aspect-ratio。
-   限幅 [1.4, 2.6]：竖图裁成 7:5 防止占据过高，超宽全景压到 2.6:1 防过扁。 */
+   限幅 [1.6, 2.4]：竖图裁成 1.6:1 (10:6) 防占据过高，超宽全景压到 2.4:1 防过扁。
+   CSS max-height:200px 是最终硬上限，保证头图不主导卡片也不撑乱列高。 */
 function fitThumb(img){
   var w=img.naturalWidth||0, h=img.naturalHeight||0;
   if(!w||!h) return;
   var r=w/h;
-  if(r<1.4) r=1.4;
-  else if(r>2.6) r=2.6;
+  if(r<1.6) r=1.6;
+  else if(r>2.4) r=2.4;
   img.style.aspectRatio=r;
 }
 
