@@ -50,16 +50,20 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .filter-clear{background:none;border:1px dashed var(--border);color:var(--text2);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0;}
 .filter-clear:hover{color:var(--blue);border-color:var(--blue);}
 
-/* ===== 情报卡片 ===== */
-.intel-grid{display:grid;grid-template-columns:1fr;gap:14px;}
-@media(min-width:768px){.intel-grid{grid-template-columns:1fr;}}
-@media(min-width:1100px){.intel-grid{grid-template-columns:1fr 1fr;}}
-.intel-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s, transform .15s;}
-.intel-card:hover{border-color:#3d4754;transform:translateY(-1px);}
-.intel-card.has-image{flex-direction:row;gap:16px;align-items:flex-start;}
-.intel-card.has-image .card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;}
-.card-thumb{width:180px;height:120px;border-radius:8px;object-fit:cover;background:var(--bg3);flex-shrink:0;display:block;}
-@media(max-width:600px){.intel-card.has-image{flex-direction:column;}.card-thumb{width:100%;height:160px;}}
+/* ===== 情报卡片（瀑布流错落布局） ===== */
+.intel-grid{display:flex;gap:14px;align-items:flex-start;}
+.m-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;}
+.intel-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:15px 17px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s, transform .15s, box-shadow .15s;animation:cardIn .35s ease both;}
+@keyframes cardIn{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+.intel-card:hover{border-color:#3d4754;transform:translateY(-2px);}
+/* 高相关情报：渐变描边微光，视觉锚点 */
+.intel-card.feat{border-color:rgba(88,166,255,.55);box-shadow:0 0 0 1px rgba(88,166,255,.12),0 4px 20px rgba(88,166,255,.10);}
+/* 带图卡片：头图横幅式（图铺满卡顶），与纯文字卡片形成错落对比 */
+.intel-card.has-image{padding:0;overflow:hidden;gap:0;}
+.intel-card.has-image .card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;padding:13px 16px 14px;}
+.card-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--bg3);display:block;border-radius:0;flex-shrink:0;}
+/* 每 3 张换一种头图比例，制造节奏感 */
+.m-col .intel-card:nth-child(3n) .card-thumb{aspect-ratio:4/3;}
 .card-top{display:flex;align-items:flex-start;gap:10px;}
 .card-badge{display:flex;flex-direction:column;align-items:center;min-width:34px;gap:2px;}
 .rel-stars{color:var(--orange);font-size:11px;letter-spacing:-1px;white-space:nowrap;}
@@ -214,11 +218,10 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   /* 日期导航横向滚动占满宽度 */
   .datebar{gap:6px;margin:10px 0 8px;}
   .date-nav{width:100%;-webkit-overflow-scrolling:touch;}
-  /* 卡片排版 */
+  /* 卡片排版（瀑布流单列，头图自适应） */
   .card-title{font-size:14px;line-height:1.45;}
   .card-summary{font-size:12.5px;line-height:1.65;}
-  .card-thumb{width:100%;height:150px;}
-  .intel-card.has-image{flex-direction:column;gap:10px;}
+  .card-thumb{aspect-ratio:16/10;}
   .rel-stars{font-size:10px;}
   /* 后台与登录 */
   .login-wrap{margin:24px 12px;padding:22px;}
@@ -568,10 +571,46 @@ function clearFilters(){
 /* ===== 情报流：滚动增量加载 ===== */
 var feed = { loading:false, done:false, cursor:'' };
 function resetFeed(){ feed.loading=false; feed.done=false; feed.cursor=''; }
+
+/* ===== 瀑布流列管理：新卡片进最矮列，宽度变化时整体重排 ===== */
+var masonry = { cols:0, colEls:[], order:[] };
+function masonryColCount(){ return window.innerWidth>=1100 ? 2 : 1; }
+function masonryReset(){ masonry.cols=0; masonry.colEls=[]; masonry.order=[]; }
+function masonryEnsure(){
+  var grid=document.getElementById('intelGrid');
+  if(!grid) return;
+  var n=masonryColCount();
+  if(n===masonry.cols && masonry.colEls.length && masonry.colEls[0].parentNode===grid) return;
+  // order 数组记录原始插入顺序，重排后阅读顺序不乱
+  var cards=masonry.order.slice();
+  masonry.colEls.forEach(function(c){ c.remove(); });
+  masonry.colEls=[];
+  for(var i=0;i<n;i++){ var d=document.createElement('div'); d.className='m-col'; grid.appendChild(d); masonry.colEls.push(d); }
+  masonry.cols=n;
+  // 视图隐藏时各列高度为 0，会按 1/2 交替分配，显示后大致均衡
+  cards.forEach(masonryPlace);
+}
+function masonryPlace(el){
+  if(masonry.order.indexOf(el)<0) masonry.order.push(el);
+  if(!masonry.colEls.length) masonryEnsure();
+  if(!masonry.colEls.length){ document.getElementById('intelGrid').appendChild(el); return; }
+  var best=masonry.colEls[0];
+  for(var i=1;i<masonry.colEls.length;i++){
+    if(masonry.colEls[i].offsetHeight < best.offsetHeight) best=masonry.colEls[i];
+  }
+  best.appendChild(el);   // appendChild 移动既有节点，事件与展开状态不丢
+}
+var _masonryRz=null;
+window.addEventListener('resize', function(){
+  clearTimeout(_masonryRz);
+  _masonryRz=setTimeout(masonryEnsure, 150);
+});
+
 function loadIntelligence(){
   resetFeed();
   var grid=document.getElementById('intelGrid'), empty=document.getElementById('emptyState');
   grid.innerHTML=''; empty.classList.add('hidden');
+  masonryReset();
   updateFeedFooter('load');
   fetchFeed(function(){
     // 首屏内容不足一屏时自动补一页
@@ -596,7 +635,10 @@ function fetchFeed(cb){
     if(!res.ok){ feed.done=true; updateFeedFooter('err', res.error||'加载失败'); if(cb)cb(); return; }
     var grid=document.getElementById('intelGrid'), list=res.data||[];
     if(list.length){
-      grid.insertAdjacentHTML('beforeend', list.map(cardHtml).join(''));
+      masonryEnsure();
+      var tmp=document.createElement('div');
+      tmp.innerHTML=list.map(cardHtml).join('');
+      Array.prototype.slice.call(tmp.children).forEach(masonryPlace);
       feed.cursor=res.next_cursor||'';
       if(!res.next_cursor){ feed.done=true; }
     } else {
@@ -647,7 +689,7 @@ function cardHtml(it){
   INTEL_STORE[it.id] = it;   // 供展开/收起切换文案用
   if(hasAI) chips+='<span class="chip chip-ai">✨AI提炼</span>';
   var thumb = it.image ? '<img class="card-thumb" src="'+esc(it.image)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '';
-  var cls = thumb ? 'intel-card has-image' : 'intel-card';
+  var cls = 'intel-card' + (thumb ? ' has-image' : '') + (it.relevance>=5 ? ' feat' : '');
   // 原文媒体：图片画廊（去掉已在缩略位显示的首图）+ 视频（mp4 直嵌 / 平台播放器点击加载）
   var media = it.media || {images:[],videos:[]};
   var galleryImgs = (media.images||[]).filter(function(u){return u && u!==it.image;});
