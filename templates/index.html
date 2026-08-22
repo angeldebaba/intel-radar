@@ -77,14 +77,10 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .chip-tag{background:rgba(188,140,255,.13);color:#cba8ff;}
 .chip-src{background:var(--bg3);color:var(--text2);}
 .chip-ai{background:rgba(255,196,84,.14);color:#ffc65a;}
-.card-summary{color:var(--text2);font-size:13px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;}
-.pagination{display:flex;justify-content:center;align-items:center;gap:6px;margin:18px 0 8px;flex-wrap:wrap;}
-.pagination button{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;transition:all .15s;font-family:inherit;}
-.pagination button:hover:not(:disabled){border-color:var(--blue);color:var(--blue);}
-.pagination button.active{background:var(--blue);border-color:var(--blue);color:#fff;}
-.pagination button:disabled{opacity:.4;cursor:not-allowed;}
-.pagination .pg-info{color:var(--text3);font-size:12px;padding:0 8px;}
-.card-summary.expanded{-webkit-line-clamp:unset;}
+.card-summary{color:var(--text2);font-size:13px;line-height:1.75;}
+.card-summary.clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;}
+.card-summary.expanded{display:block;-webkit-line-clamp:unset;}
+.feed-footer{text-align:center;color:var(--text3);font-size:12.5px;padding:16px 0 26px;letter-spacing:1px;}
 .card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;border-top:1px solid rgba(48,54,61,.5);}
 .card-foot .date{color:var(--text3);font-size:11.5px;}
 .expand-btn{background:none;border:none;color:var(--text2);font-size:12px;cursor:pointer;padding:2px 6px;}
@@ -195,6 +191,32 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   .admin-tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px;}
   .admin-tabs button{flex-shrink:0;padding:7px 12px;font-size:13px;}
   .topbar-inner{padding:8px 12px;}
+  /* 手机端：筛选控件两个一行，关键词独占一行 */
+  .filters{gap:6px;}
+  .filters select{flex:1 1 calc(50% - 6px);max-width:none;font-size:12px;padding:6px 6px;}
+  .filters input[type=text]{flex:1 1 100%;max-width:none;min-width:0;}
+  .filters .f-label{display:none;}
+  .filters .filter-clear{flex:0 0 auto;}
+  /* 日期导航横向滚动占满宽度 */
+  .datebar{gap:6px;margin:10px 0 8px;}
+  .date-nav{width:100%;-webkit-overflow-scrolling:touch;}
+  /* 卡片排版 */
+  .card-title{font-size:14px;line-height:1.45;}
+  .card-summary{font-size:12.5px;line-height:1.65;}
+  .card-thumb{width:100%;height:150px;}
+  .intel-card.has-image{flex-direction:column;gap:10px;}
+  .rel-stars{font-size:10px;}
+  /* 后台与登录 */
+  .login-wrap{margin:24px 12px;padding:22px;}
+  .panel{padding:14px;}
+  .kv-grid{grid-template-columns:repeat(2,1fr);}
+  .kv .num{font-size:20px;}
+  .gap-row .g-title{min-width:0;width:100%;}
+  .gap-row .g-vendor{min-width:0;}
+  .logo small{display:none;}
+  .tbl-wrap{margin-left:-14px;margin-right:-14px;}
+  table.tbl{font-size:12px;}
+  .feed-footer{padding:14px 0 30px;}
 }
 </style>
 </head>
@@ -242,6 +264,8 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <div class="big">🛰️</div>
     <div class="tip">今天还没有情报数据。<br>等每日自动采集跑起来后，这里会显示行业动态。</div>
   </div>
+  <div class="feed-footer" id="feedFooter"></div>
+  <div id="feedSentinel" style="height:1px;"></div>
 </div>
 
 <!-- ========== 后台：登录 ========== -->
@@ -526,41 +550,72 @@ function clearFilters(){
   loadIntelligence(); loadFilters();
 }
 
+/* ===== 情报流：滚动增量加载 ===== */
+var feed = { loading:false, done:false, cursor:'' };
+function resetFeed(){ feed.loading=false; feed.done=false; feed.cursor=''; }
 function loadIntelligence(){
+  resetFeed();
+  var grid=document.getElementById('intelGrid'), empty=document.getElementById('emptyState');
+  grid.innerHTML=''; empty.classList.add('hidden');
+  updateFeedFooter('load');
+  fetchFeed(function(){
+    // 首屏内容不足一屏时自动补一页
+    if(!feed.done && document.body.scrollHeight - window.innerHeight < 300){ maybeLoadMore(); }
+  });
+}
+function feedQS(){
   var qs='?date='+(state.date||todayStr());
   if(state.vendor) qs+='&vendor='+encodeURIComponent(state.vendor);
   if(state.industry) qs+='&industry='+encodeURIComponent(state.industry);
   if(state.tag) qs+='&tag='+encodeURIComponent(state.tag);
   if(state.rel) qs+='&relevance='+state.rel;
   if(state.keyword) qs+='&q='+encodeURIComponent(state.keyword);
-  qs+='&page='+state.page+'&page_size=8';
-  var grid=document.getElementById('intelGrid'), empty=document.getElementById('emptyState');
-  grid.innerHTML='<div class="loading">📡 正在加载情报…</div>';
-  empty.classList.add('hidden');
-  api('/api/intelligence'+qs).then(function(res){
-    if(!res.ok || !res.data.length){ grid.innerHTML=''; empty.classList.remove('hidden'); renderPager(0,1,1); return; }
-    empty.classList.add('hidden');
-    var list=res.data.slice();
-    if(state.sort==='new'){ list.sort(function(a,b){ return b.id-a.id; }); }
-    grid.innerHTML = list.map(cardHtml).join('');
-    renderPager(res.total, res.page, res.total_pages);
-  }).catch(function(){ grid.innerHTML=''; empty.classList.remove('hidden'); });
+  qs+='&sort='+(state.sort||'rel')+'&page_size=8';
+  if(feed.cursor) qs+='&cursor='+encodeURIComponent(feed.cursor);
+  return qs;
 }
-function renderPager(total, page, totalPages){
-  var el=document.getElementById('pager');
-  if(!el){ el=document.createElement('div'); el.id='pager'; el.className='pagination'; var eg=document.getElementById('intelGrid'); if(eg && eg.parentNode) eg.parentNode.insertBefore(el, eg.nextSibling); }
-  if(!total){ el.innerHTML=''; return; }
-  var html='';
-  html += '<button onclick="goPage('+(page-1)+')" '+(page<=1?'disabled':'')+'>‹ 上一页</button>';
-  var start=Math.max(1,page-2), end=Math.min(totalPages,page+2);
-  if(start>1){ html += '<button onclick="goPage(1)">1</button>'; if(start>2) html += '<span class="pg-info">…</span>'; }
-  for(var i=start;i<=end;i++) html += '<button class="'+(i===page?'active':'')+'" onclick="goPage('+i+')">'+i+'</button>';
-  if(end<totalPages){ if(end<totalPages-1) html += '<span class="pg-info">…</span>'; html += '<button onclick="goPage('+totalPages+')">'+totalPages+'</button>'; }
-  html += '<button onclick="goPage('+(page+1)+')" '+(page>=totalPages?'disabled':'')+'>下一页 ›</button>';
-  html += '<span class="pg-info">共 '+total+' 条 / '+page+'/'+totalPages+'</span>';
-  el.innerHTML=html;
+function fetchFeed(cb){
+  feed.loading=true; updateFeedFooter('load');
+  api('/api/intelligence'+feedQS()).then(function(res){
+    feed.loading=false;
+    if(!res.ok){ feed.done=true; updateFeedFooter('err', res.error||'加载失败'); if(cb)cb(); return; }
+    var grid=document.getElementById('intelGrid'), list=res.data||[];
+    if(list.length){
+      grid.insertAdjacentHTML('beforeend', list.map(cardHtml).join(''));
+      feed.cursor=res.next_cursor||'';
+      if(!res.next_cursor){ feed.done=true; }
+    } else {
+      feed.done=true;
+      // 第一页就为空 → 显示空状态；后续页为空 → 到底
+      if(!feed.cursor){ document.getElementById('emptyState').classList.remove('hidden'); }
+    }
+    updateFeedFooter(feed.done?'done':'more');
+    if(cb)cb();
+  }).catch(function(){ feed.loading=false; feed.done=true; updateFeedFooter('err'); if(cb)cb(); });
 }
-function goPage(p){ if(p<1) return; state.page=p; loadIntelligence(); var eg=document.getElementById('intelGrid'); if(eg) window.scrollTo({top:eg.offsetTop-100,behavior:'smooth'}); }
+function maybeLoadMore(){
+  if(feed.loading||feed.done) return;
+  fetchFeed(function(){
+    if(!feed.done && document.body.scrollHeight - window.innerHeight < 300){ maybeLoadMore(); }
+  });
+}
+function updateFeedFooter(mode, err){
+  var el=document.getElementById('feedFooter'); if(!el) return;
+  if(mode==='load'){ el.innerHTML='📡 正在加载情报…'; }
+  else if(mode==='err'){ el.innerHTML='<span style="color:var(--red)">⚠ '+(err||'加载失败')+'</span>'; }
+  else if(mode==='done'){ el.innerHTML = feed.cursor ? '— 已经到底啦 —' : ''; }
+  else { el.innerHTML=''; }
+}
+var _feedObs=null;
+function initFeedObserver(){
+  var s=document.getElementById('feedSentinel');
+  if(!s || typeof IntersectionObserver==='undefined') return;
+  if(_feedObs) _feedObs.disconnect();
+  _feedObs=new IntersectionObserver(function(en){
+    if(en[0].isIntersecting) maybeLoadMore();
+  },{rootMargin:'500px'});
+  _feedObs.observe(s);
+}
 function cardHtml(it){
   var stars='', i;
   for(i=0;i<5;i++) stars += i<it.relevance ? '★' : '☆';
@@ -570,13 +625,21 @@ function cardHtml(it){
   if(it.industry) chips+='<span class="chip chip-industry">'+it.industry+'</span>';
   if(it.source) chips+='<span class="chip chip-src">'+it.source+'</span>';
   var title = it.url ? '<a href="'+it.url+'" target="_blank">'+esc(it.title)+'</a>' : esc(it.title);
-  // 收起时显示 AI 提炼摘要(summary)，展开后显示采集到的原文摘要(description)
+  // AI 摘要完整展示；无 AI 摘要且原文过长时折叠为 6 行
   var sumText = it.summary || it.description || '';
-  var fullText = (it.description && it.description.length > sumText.length) ? it.description : sumText;
+  var hasAI = !!(it.summary && it.description && it.summary !== it.description);
+  var clampCls = (it.summary || !it.description || it.description.length<=160) ? '' : ' clamp';
   INTEL_STORE[it.id] = it;   // 供展开/收起切换文案用
-  if(it.summary && it.description && it.summary !== it.description) chips+='<span class="chip chip-ai">✨AI提炼</span>';
+  if(hasAI) chips+='<span class="chip chip-ai">✨AI提炼</span>';
   var thumb = it.image ? '<img class="card-thumb" src="'+esc(it.image)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '';
   var cls = thumb ? 'intel-card has-image' : 'intel-card';
+  // 展开按钮：有 AI 摘要且原文更长 → 展开原文；无 AI 摘要且原文被折叠 → 展开全文
+  var expandBtn = '';
+  if(hasAI && it.description.length > sumText.length + 10){
+    expandBtn = '<button class="expand-btn" data-label="展开原文" onclick="toggleSummary('+it.id+',this)">展开原文</button>';
+  } else if(!it.summary && clampCls){
+    expandBtn = '<button class="expand-btn" data-label="展开全文" onclick="toggleSummary('+it.id+',this)">展开全文</button>';
+  }
   var body =
     '<div class="card-body">'+
       '<div class="card-top">'+
@@ -585,10 +648,10 @@ function cardHtml(it){
         '<button class="fav-btn'+(it.is_favorite?' on':'')+'" onclick="toggleFav('+it.id+',this)">'+(it.is_favorite?'★':'☆')+'</button>'+
       '</div>'+
       '<div class="card-meta">'+chips+tags+'</div>'+
-      '<div class="card-summary" id="sum-'+it.id+'">'+esc(sumText)+'</div>'+
+      '<div class="card-summary'+clampCls+'" id="sum-'+it.id+'">'+esc(sumText)+'</div>'+
       '<div class="card-foot">'+
         '<span class="date">'+it.date+'</span>'+
-        (fullText.length>80?'<button class="expand-btn" onclick="toggleSummary('+it.id+',this)">展开原文</button>':'')+
+        expandBtn+
       '</div>'+
     '</div>';
   return '<div class="'+cls+'" id="card-'+it.id+'">'+thumb+body+'</div>';
@@ -596,10 +659,12 @@ function cardHtml(it){
 function toggleSummary(id,btn){
   var el=document.getElementById('sum-'+id), it=INTEL_STORE[id];
   if(el.classList.contains('expanded')){
-    el.classList.remove('expanded'); btn.textContent='展开原文';
+    el.classList.remove('expanded'); btn.textContent=btn.dataset.label||'展开';
     if(it) el.textContent=(it.summary||it.description||'');
   } else {
-    el.classList.add('expanded'); btn.textContent='收起';
+    el.classList.add('expanded'); 
+    if(!btn.dataset.label) btn.dataset.label=btn.textContent;
+    btn.textContent='收起';
     if(it && it.description && it.description.length>(it.summary||'').length) el.textContent=it.description;
   }
 }
@@ -880,20 +945,25 @@ function loadLogs(){
 }
 
 /* ===== 筛选事件绑定 ===== */
-document.getElementById('fVendor').addEventListener('change',function(){ state.vendor=this.value; state.page=1; loadIntelligence(); });
-document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; state.page=1; loadIntelligence(); });
-document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; state.page=1; loadIntelligence(); });
-document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; state.page=1; loadIntelligence(); });
-document.getElementById('fSort').addEventListener('change',function(){ state.sort=this.value; state.page=1; loadIntelligence(); });
+document.getElementById('fVendor').addEventListener('change',function(){ state.vendor=this.value; loadIntelligence(); });
+document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; loadIntelligence(); });
+document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; loadIntelligence(); });
+document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; loadIntelligence(); });
+document.getElementById('fSort').addEventListener('change',function(){ state.sort=this.value; loadIntelligence(); });
 var kwTimer;
 document.getElementById('fKeyword').addEventListener('input',function(){
   clearTimeout(kwTimer); var me=this;
-  kwTimer=setTimeout(function(){ state.keyword=me.value.trim(); state.page=1; loadIntelligence(); },400);
+  kwTimer=setTimeout(function(){ state.keyword=me.value.trim(); loadIntelligence(); },400);
 });
+/* 滚动兜底（不支持 IntersectionObserver 的环境） */
+window.addEventListener('scroll',function(){
+  if(window.innerHeight + window.scrollY >= document.body.offsetHeight - 600){ maybeLoadMore(); }
+},{passive:true});
 
 /* ===== 启动 ===== */
 state.date = todayStr();
 initRoute();
+initFeedObserver();
 </script>
 </body>
 </html>
