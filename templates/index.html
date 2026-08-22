@@ -80,6 +80,20 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .card-summary{color:var(--text2);font-size:13px;line-height:1.75;}
 .card-summary.clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;}
 .card-summary.expanded{display:block;-webkit-line-clamp:unset;}
+
+/* ===== 原文媒体（图片画廊 / 视频） ===== */
+.card-media{display:flex;flex-direction:column;gap:8px;}
+.card-gallery{display:flex;gap:6px;flex-wrap:wrap;}
+.card-gallery a{display:block;width:110px;height:74px;border-radius:6px;overflow:hidden;background:var(--bg3);flex-shrink:0;}
+.card-gallery img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .15s;}
+.card-gallery a:hover img{transform:scale(1.06);}
+@media(max-width:600px){.card-gallery a{width:calc(33.33% - 4px);height:70px;}}
+.card-video{border-radius:8px;overflow:hidden;background:#000;line-height:0;}
+.card-video video{width:100%;max-height:340px;display:block;background:#000;}
+.video-toggle{display:inline-flex;align-items:center;gap:6px;background:rgba(255,90,90,.13);color:#ff9c9c;border:none;font-size:12px;padding:4px 12px;border-radius:12px;cursor:pointer;align-self:flex-start;}
+.video-toggle:hover{background:rgba(255,90,90,.22);}
+.card-video iframe{width:100%;height:260px;border:0;display:block;}
+@media(max-width:600px){.card-video iframe{height:200px;}}
 .feed-footer{text-align:center;color:var(--text3);font-size:12.5px;padding:16px 0 26px;letter-spacing:1px;}
 .card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;border-top:1px solid rgba(48,54,61,.5);}
 .card-foot .date{color:var(--text3);font-size:11.5px;}
@@ -634,6 +648,31 @@ function cardHtml(it){
   if(hasAI) chips+='<span class="chip chip-ai">✨AI提炼</span>';
   var thumb = it.image ? '<img class="card-thumb" src="'+esc(it.image)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '';
   var cls = thumb ? 'intel-card has-image' : 'intel-card';
+  // 原文媒体：图片画廊（去掉已在缩略位显示的首图）+ 视频（mp4 直嵌 / 平台播放器点击加载）
+  var media = it.media || {images:[],videos:[]};
+  var galleryImgs = (media.images||[]).filter(function(u){return u && u!==it.image;});
+  var mediaHtml = '';
+  if(galleryImgs.length || (media.videos||[]).length){
+    mediaHtml += '<div class="card-media">';
+    if(galleryImgs.length){
+      mediaHtml += '<div class="card-gallery">';
+      for(var g=0; g<galleryImgs.length && g<4; g++){
+        mediaHtml += '<a href="'+esc(galleryImgs[g])+'" target="_blank" rel="noopener" title="查看原图"><img src="'+esc(galleryImgs[g])+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.style.display=\'none\'"></a>';
+      }
+      mediaHtml += '</div>';
+    }
+    for(var v=0; v<(media.videos||[]).length && v<2; v++){
+      var vd = media.videos[v];
+      if(vd.type === 'video'){
+        // mp4/webm 直链：内嵌播放器，点击才加载资源
+        mediaHtml += '<button class="video-toggle" onclick="loadInlineVideo(this,\''+jsq(vd.url)+'\')">▶ 播放视频</button>';
+      } else {
+        // B站/腾讯/优酷等 iframe 播放器：点击占位符再加载（避免整页大量 iframe）
+        mediaHtml += '<button class="video-toggle" onclick="loadEmbedVideo(this,\''+jsq(vd.url)+'\')">▶ 观看视频</button>';
+      }
+    }
+    mediaHtml += '</div>';
+  }
   // 展开按钮：有 AI 摘要且原文更长 → 展开原文；无 AI 摘要且原文被折叠 → 展开全文
   var expandBtn = '';
   if(hasAI && it.description.length > sumText.length + 10){
@@ -650,6 +689,7 @@ function cardHtml(it){
       '</div>'+
       '<div class="card-meta">'+chips+tags+'</div>'+
       '<div class="card-summary'+clampCls+'" id="sum-'+it.id+'">'+esc(sumText)+'</div>'+
+      mediaHtml+
       '<div class="card-foot">'+
         '<span class="date">'+(it.published && it.published!==it.date ? ('发布 '+it.published+' · 采集 '+it.date) : it.date)+'</span>'+
         expandBtn+
@@ -663,11 +703,27 @@ function toggleSummary(id,btn){
     el.classList.remove('expanded'); btn.textContent=btn.dataset.label||'展开';
     if(it) el.textContent=(it.summary||it.description||'');
   } else {
-    el.classList.add('expanded'); 
+    el.classList.add('expanded');
     if(!btn.dataset.label) btn.dataset.label=btn.textContent;
     btn.textContent='收起';
     if(it && it.description && it.description.length>(it.summary||'').length) el.textContent=it.description;
   }
+}
+/* 原文媒体：点击后内嵌播放 mp4 直链视频 */
+function loadInlineVideo(btn,url){
+  var box=document.createElement('div'); box.className='card-video';
+  box.innerHTML='<video src="'+url+'" controls playsinline preload="metadata"></video>';
+  btn.parentNode.replaceChild(box,btn);
+  var v=box.querySelector('video'); if(v){ v.play().catch(function(){}); }
+}
+/* 原文媒体：点击后加载 B站/腾讯/优酷等 iframe 播放器（避免整页大量 iframe 拖慢加载） */
+function loadEmbedVideo(btn,url){
+  var box=document.createElement('div'); box.className='card-video';
+  var ifr=document.createElement('iframe');
+  ifr.src=url; ifr.allow='fullscreen; encrypted-media; picture-in-picture';
+  ifr.setAttribute('allowfullscreen',''); ifr.setAttribute('referrerpolicy','no-referrer');
+  box.appendChild(ifr);
+  btn.parentNode.replaceChild(box,btn);
 }
 function toggleFav(id,btn){
   api('/api/favorite/'+id,{method:'POST',headers:{'Content-Type':'application/json'}}).then(function(res){
@@ -675,6 +731,7 @@ function toggleFav(id,btn){
   });
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function jsq(s){ return esc(s).replace(/'/g,'\\x27'); }  // URL 内嵌 onclick 字符串参数用
 
 /* ===== 后台 ===== */
 function checkAdminStatus(){

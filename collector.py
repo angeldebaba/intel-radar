@@ -127,6 +127,182 @@ def _enrich_article_image(item, timeout=6):
         pass
 
 
+# ==================== 原文媒体提取（图片/视频嵌入卡片） ====================
+
+# 图片噪音特征：logo/图标/头像/表情/二维码/精灵图等
+_IMG_NOISE = ('logo', 'icon', 'sprite', 'avatar', 'emoji', 'qrcode', 'wechat',
+              'share_', 'button', 'banner_ad', 'ad_', 'pixel', 'spacer',
+              'loading', 'placeholder', 'blank', 'default', '1x1', 'beacon')
+
+# 支持内嵌播放的视频平台（iframe src 域名特征）
+_VIDEO_EMBED_HOSTS = ('player.bilibili.com', 'www.bilibili.com/video',
+                      'v.qq.com/txp/iframe', 'v.qq.com/x/cover', 'v.qq.com/x/page',
+                      'player.youku.com', 'youku.com/embed',
+                      'www.youtube.com/embed', 'ixigua.com/embed')
+
+_VIDEO_EXT = ('.mp4', '.webm', '.m3u8', '.mov')
+
+
+def _norm_media_url(u, base_url):
+    """规范化媒体链接：相对路径转绝对；无效返回 ''"""
+    if not u:
+        return ''
+    u = u.strip().strip('\'"')
+    if u.startswith('//'):
+        u = 'https:' + u
+    elif u.startswith('/'):
+        u = urljoin(base_url, u)
+    elif not u.startswith('http'):
+        u = urljoin(base_url, u)
+    u = u.replace('&amp;', '&')
+    p = urlparse(u)
+    if p.scheme not in ('http', 'https') or not p.netloc:
+        return ''
+    return u
+
+
+def _extract_media(html_text, base_url):
+    """从文章页 HTML 提取正文图片与视频链接（未校验有效性）
+    返回 {'images': [...], 'videos': [{'url':..., 'type': 'video'|'embed'}]}"""
+    out = {'images': [], 'videos': []}
+    if not html_text:
+        return out
+    text = html_text[:400000]
+
+    # ---- 视频：video/source 标签与 mp4 直链（最可靠，优先保留） ----
+    seen_v = set()
+    for m in re.finditer(r'<(?:video|source)[^>]+src=["\']([^"\']+)["\']', text, re.I):
+        u = _norm_media_url(m.group(1), base_url)
+        if u and u.lower().split('?')[0].endswith(_VIDEO_EXT) and u not in seen_v:
+            seen_v.add(u)
+            out['videos'].append({'url': u, 'type': 'video'})
+    # 兜底：正文里裸露的 mp4 直链（JSON 数据里常见）
+    if not out['videos']:
+        for m in re.finditer(r'https?://[^\s"\'<>]+?\.mp4', text, re.I):
+            u = _norm_media_url(m.group(0), base_url)
+            if u and u not in seen_v and 'logo' not in u.lower():
+                seen_v.add(u)
+                out['videos'].append({'url': u, 'type': 'video'})
+            if len(out['videos']) >= config.MEDIA_MAX_VIDEOS:
+                break
+
+    # ---- 视频：iframe 播放器（B站/腾讯/优酷/YouTube 等） ----
+    for m in re.finditer(r'<iframe[^>]+src=["\']([^"\']+)["\']', text, re.I):
+        u = _norm_media_url(m.group(1), base_url)
+        if u and any(h in u for h in _VIDEO_EMBED_HOSTS) and u not in seen_v:
+            # B站普通页转播放器页（可直接 iframe）
+            m2 = re.search(r'bilibili\.com/video/(BV[\w]+)', u)
+            if m2:
+                u = 'https://player.bilibili.com/player.html?bvid=%s&autoplay=0' % m2.group(1)
+            seen_v.add(u)
+            out['videos'].append({'url': u, 'type': 'embed'})
+    out['videos'] = out['videos'][:config.MEDIA_MAX_VIDEOS]
+
+    # ---- 图片：og:image 优先 ----
+    imgs = []
+    og = _extract_og_image(text)
+    if og:
+        og = _norm_media_url(og, base_url)
+        if og:
+            imgs.append(og)
+    # 正文 img 标签（含懒加载 data-src/data-original）
+    for m in re.finditer(
+            r'<img[^>]+src=["\']([^"\']+)["\'][^>]*>', text, re.I):
+        u = m.group(0)
+        src = _norm_media_url(m.group(1), base_url)
+        # 懒加载：src 是占位图时取 data-src
+        if not src or 'data:image' in m.group(1):
+            m2 = re.search(r'data-(?:src|original|lazy-src)=["\']([^"\']+)["\']', u, re.I)
+            if m2:
+                src = _norm_media_url(m2.group(1), base_url)
+        if not src:
+            continue
+        low = src.lower()
+        # 过滤：动图表情/图标特征/明显小图
+        if low.endswith('.gif') or 'data:image' in low:
+            continue
+        if any(n in low for n in _IMG_NOISE):
+            continue
+        # width/height 属性明显过小的跳过（图标/占位）
+        mw = re.search(r'width=["\']?(\d+)', u, re.I)
+        mh = re.search(r'height=["\']?(\d+)', u, re.I)
+        if (mw and int(mw.group(1)) < 120) or (mh and int(mh.group(1)) < 80):
+            continue
+        imgs.append(src)
+    # 去重保序
+    seen = set()
+    for u in imgs:
+        if u and u not in seen:
+            seen.add(u)
+            out['images'].append(u)
+    return out
+
+
+def _check_media_url(url, timeout=None):
+    """校验媒体链接有效性：HEAD 请求 2xx/3xx 且非极小文件；
+    HEAD 被拒(405)时降级 GET 流式探测。失败返回 False。"""
+    timeout = timeout or config.MEDIA_CHECK_TIMEOUT
+    try:
+        r = _session.head(url, timeout=timeout, allow_redirects=True,
+                          headers=_random_ua())
+        code = r.status_code
+        if code == 405 or code == 403:
+            # 部分站点禁 HEAD，降级 GET 只看状态码
+            rr = _session.get(url, timeout=timeout, allow_redirects=True,
+                              stream=True, headers=_random_ua())
+            code = rr.status_code
+            clen = int(rr.headers.get('Content-Length') or 0)
+            rr.close()
+            return code < 400 and (clen == 0 or clen > 2048)
+        if code >= 400:
+            return False
+        clen = int(r.headers.get('Content-Length') or 0)
+        if 0 < clen <= 2048:  # 2KB 以下多为 1x1 像点/图标
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _validate_media(media):
+    """并发校验图片/视频链接，剔除失效链接（3 线程并发控制总耗时）"""
+    if not media.get('images') and not media.get('videos'):
+        return media
+    from concurrent.futures import ThreadPoolExecutor
+    urls = [v['url'] for v in media.get('videos', [])] + media.get('images', [])
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        results = dict(zip(urls, ex.map(_check_media_url, urls)))
+    media['images'] = [u for u in media['images'] if results.get(u)][:config.MEDIA_MAX_IMAGES]
+    media['videos'] = [v for v in media['videos']
+                       if results.get(v['url'])][:config.MEDIA_MAX_VIDEOS]
+    return media
+
+
+def _enrich_article_media(item, timeout=6):
+    """抓文章页提取缩略图 + 正文图片/视频（含有效性校验），写入 item['image']/item['media']"""
+    url = item.get('url', '')
+    if not url.startswith('http'):
+        return
+    try:
+        resp = _request_get(url, timeout=timeout, referer='https://www.sogou.com/')
+        if not resp:
+            return
+        media = _extract_media(resp.text, resp.url)
+        # og:image 已是精选缩略图候选，保底进 images 首位
+        og = _norm_media_url(_extract_og_image(resp.text[:200000]), resp.url)
+        if og and og not in media['images']:
+            media['images'].insert(0, og)
+        if not media['images'] and not media['videos']:
+            return
+        media = _validate_media(media)
+        if media['images']:
+            item['image'] = media['images'][0]
+        if media['images'] or media['videos']:
+            item['media'] = {'images': media['images'], 'videos': media['videos']}
+    except Exception:
+        pass
+
+
 def _is_antispider(text):
     """检测是否被反爬"""
     if not text:
@@ -982,6 +1158,7 @@ def collect_once():
     url_seen = set()
     title_seen = set()
     step = 0
+    media_enriched = 0  # 已抓媒体的文章页数（限额控制总耗时）
 
     def _add_items(items, vendor_name):
         nonlocal added
@@ -1043,9 +1220,10 @@ def collect_once():
 
             industry = detect_industry(title, raw_summary)
 
-            # 缩略图：异步抓文章页 og:image（前3条用同步，避免拖慢整体）
-            if not it.get('image') and added < 3:
-                _enrich_article_image(it)
+            # 媒体抓取：抓文章页提取图片/视频嵌入卡片（限额控制总耗时）
+            if media_enriched < config.MEDIA_ENRICH_LIMIT:
+                _enrich_article_media(it)
+                media_enriched += 1
 
             ok = database.add_intelligence({
                 'date': database.today_str(),
@@ -1057,6 +1235,7 @@ def collect_once():
                 'summary': summary,
                 'description': raw_summary,
                 'image': it.get('image', ''),
+                'media': it.get('media') or {},
                 'relevance': rel,
                 'tags': tags,
                 'published': it.get('published', ''),

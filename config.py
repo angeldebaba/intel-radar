@@ -43,6 +43,16 @@ MANUAL_COOLDOWN_HOURS = float(os.environ.get('MANUAL_COOLDOWN_HOURS', '4'))
 # 时效控制：文章发布时间超过N天不入库（官网+搜索引擎结果统一按此过滤）
 FRESH_DAYS = int(os.environ.get('FRESH_DAYS', '30'))
 
+# ===== 媒体抓取（原文图片/视频嵌入卡片） =====
+# 每次采集最多抓多少篇文章页提取图片/视频（每篇多一次 HTTP 请求，控制总耗时）
+MEDIA_ENRICH_LIMIT = int(os.environ.get('MEDIA_ENRICH_LIMIT', '10'))
+# 单条情报最多保留图片数 / 视频数
+MEDIA_MAX_IMAGES = int(os.environ.get('MEDIA_MAX_IMAGES', '4'))
+MEDIA_MAX_VIDEOS = int(os.environ.get('MEDIA_MAX_VIDEOS', '2'))
+# 媒体链接有效性校验超时（秒）
+MEDIA_CHECK_TIMEOUT = int(os.environ.get('MEDIA_CHECK_TIMEOUT', '5'))
+
+
 # 厂商列表：name=中文名, key=搜索关键词（多个组合）
 VENDORS = [
     {'name': '海康威视', 'keywords': ['海康威视 数字孪生', '海康威视 视频融合', '海康威视 三维可视化']},

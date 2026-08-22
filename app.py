@@ -176,6 +176,18 @@ def api_intelligence():
         next_cursor = '{}_{}'.format(key, last['id'])
     for r in rows:
         r['tags'] = json.loads(r['tags'] or '[]')
+        # media: {'images': [...], 'videos': [{'url','type'}]}；老数据可能为空/非法 JSON
+        try:
+            m = json.loads(r.get('media') or '{}')
+            if not isinstance(m, dict):
+                m = {}
+            r['media'] = {
+                'images': [u for u in (m.get('images') or []) if isinstance(u, str)],
+                'videos': [v for v in (m.get('videos') or [])
+                           if isinstance(v, dict) and v.get('url')],
+            }
+        except (ValueError, TypeError):
+            r['media'] = {'images': [], 'videos': []}
 
     # 首页才统计总数（按当日 + 筛选条件；此时 where 末位即 date=?，参数顺序一致）
     total = 0
@@ -517,7 +529,30 @@ def _run_reprocess():
             st['deleted'] += 1
         st['log'].append('清理超龄旧文(发布>{}天): {} 条'.format(config.FRESH_DAYS, len(stale)))
 
-        # 第三步：AI 重跑短摘要
+        # 第三步：回填原文图片/视频（存量条目 media 为空时抓文章页提取，限额控制耗时）
+        rows = database.query(
+            "SELECT id, url, image FROM intelligence "
+            "WHERE (media IS NULL OR media='') AND url LIKE 'http%' "
+            "ORDER BY id DESC LIMIT 30")
+        st['log'].append('媒体回填: 待处理 {} 条'.format(len(rows)))
+        media_added = 0
+        for r in rows:
+            it = {'url': r['url'], 'image': r['image'] or ''}
+            collector._enrich_article_media(it)
+            if it.get('media') and (it['media'].get('images') or it['media'].get('videos')):
+                database.execute(
+                    'UPDATE intelligence SET image=?, media=? WHERE id=?',
+                    (it.get('image', r['image'] or ''),
+                     json.dumps(it['media'], ensure_ascii=False), r['id']))
+                st['updated'] += 1
+                media_added += 1
+            elif it.get('image') and not r['image']:
+                # 没抓到媒体但补到了缩略图，也写回
+                database.execute('UPDATE intelligence SET image=? WHERE id=?',
+                                 (it['image'], r['id']))
+        st['log'].append('媒体回填完成: 补充 {} 条'.format(media_added))
+
+        # 第四步：AI 重跑短摘要
         rows = database.query(
             'SELECT id, title, summary, description, vendor, tags '
             'FROM intelligence WHERE length(summary) < 100 ORDER BY id')
