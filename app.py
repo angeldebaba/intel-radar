@@ -586,7 +586,20 @@ def admin_reprocess():
 @app.route('/api/admin/reprocess-status')
 @require_admin
 def admin_reprocess_status():
-    return jsonify({'ok': True, 'data': REPROCESS})
+    """前端轮询：返回内存里的进度（running/done/total）+ 上次完成的真实数字（来自数据库日志，避免前后端状态不一致）"""
+    data = dict(REPROCESS)
+    # 从数据库 collect_log 读最近一条「数据整理完成」记录作为权威结果
+    # 这样即便 Flask worker 被 Render 回收内存状态丢失，前端仍能看到真实完成数
+    last = database.query_one(
+        "SELECT detail, created_at FROM collect_log "
+        "WHERE action='collect' AND detail LIKE '数据整理完成%' "
+        "ORDER BY id DESC LIMIT 1")
+    if last:
+        data['last_finished'] = {
+            'detail': last['detail'],
+            'ts': last['created_at'],
+        }
+    return jsonify({'ok': True, 'data': data})
 
 
 @app.route('/api/admin/collect-status')

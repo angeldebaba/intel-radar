@@ -905,9 +905,18 @@ function runReprocess(){
         }else{
           clearInterval(_reprocessTimer); _reprocessTimer=null;
           b.disabled=false; b.textContent='🧹 数据整理';
-          var tail = p.failed>0 ? '，'+p.failed+' 条失败' : '';
-          document.getElementById('opMsg').innerHTML='<span class="msg ok">✅ 整理完成：升级 '+p.updated+' 条，清理 '+p.deleted+' 条'+tail+'</span>';
-          loadAll(); loadOverview();
+          // 优先显示数据库日志里的真实数字（不会被 worker 重启清空，更可靠）
+          var html;
+          if(p.last_finished){
+            html='<span class="msg ok">✅ '+p.last_finished.detail+'</span>';
+          }else if(p.updated||p.deleted){
+            var tail = p.failed>0 ? '，'+p.failed+' 条失败' : '';
+            html='<span class="msg ok">✅ 整理完成：升级 '+p.updated+' 条，清理 '+p.deleted+' 条'+tail+'</span>';
+          }else{
+            html='<span class="msg">✅ 整理完成（无需要处理的条目）</span>';
+          }
+          document.getElementById('opMsg').innerHTML=html;
+          loadAll(); loadOverview(); loadLogs();
         }
       }).catch(function(){});
     }, 3000);
