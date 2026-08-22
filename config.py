@@ -37,6 +37,8 @@ AI_BATCH_SIZE = int(os.environ.get('AI_BATCH_SIZE', '10'))  # 每次请求合并
 COLLECT_TIME = os.environ.get('COLLECT_TIME', '23:00')    # 每晚采集，次日白天可见
 PUSH_TIME = os.environ.get('PUSH_TIME', '08:00')          # 每日早上微信推送
 MAX_PER_QUERY = int(os.environ.get('MAX_PER_QUERY', 6))   # 每个查询取前N条
+# 手动采集冷却期（小时）：冷却期内重复采集因全局去重不会新增，且易触发搜索引擎风控
+MANUAL_COOLDOWN_HOURS = float(os.environ.get('MANUAL_COOLDOWN_HOURS', '4'))
 
 # 厂商列表：name=中文名, key=搜索关键词（多个组合）
 VENDORS = [
