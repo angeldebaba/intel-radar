@@ -133,30 +133,55 @@ def main():
 
     print('部署任务已提交: %s' % json.dumps(resp, ensure_ascii=False)[:300])
 
-    # 轮询部署记录
+    # 记住触发前的最新部署号，之后只看"新出现"的记录（记录按时间升序，最新的在末尾）
+    def _newest_deploy_id():
+        r = tcbr('DescribeCloudRunDeployRecord',
+                 {'EnvId': env_id, 'ServerName': SERVER_NAME})
+        if r.get('Error'):
+            return None, []
+        recs = r.get('DeployRecords') or []
+        if not recs:
+            return None, []
+        return recs[-1], recs
+
+    base_rec, _ = _newest_deploy_id()
+    base_id = base_rec.get('DeployId') if base_rec else ''
+
+    # 轮询部署记录：只观察比 base_id 更新的记录，避免误读旧记录的 normal 状态
     deadline = time.time() + TIMEOUT_MIN * 60
     last = ''
     while time.time() < deadline:
         time.sleep(20)
-        resp = tcbr('DescribeCloudRunDeployRecord',
-                    {'EnvId': env_id, 'ServerName': SERVER_NAME})
-        if resp.get('Error'):
-            print('查询部署记录失败: %s（继续轮询）' % resp['Error'].get('Message'))
+        rec, records = _newest_deploy_id()
+        if rec is None:
+            print('查询部署记录失败（继续轮询）')
             continue
-        records = resp.get('DeployRecords') or []
-        if not records:
+        if rec.get('DeployId') == base_id and not records:
             continue
-        rec = records[0]
+        # 过滤出本次触发产生的新记录
+        new_records = [x for x in records
+                       if not base_id or str(x.get('DeployId', '')) > str(base_id)]
+        if not new_records:
+            continue
+        rec = new_records[-1]
         status = rec.get('Status') or ''
-        if status != last:
-            print('部署状态: %s 部署Id=%s 时间=%s' % (status, rec.get('DeployId'), rec.get('DeployTime')))
-            last = status
+        line = '部署状态: %s 部署Id=%s 时间=%s 版本=%s' % (
+            status, rec.get('DeployId'), rec.get('DeployTime'),
+            (rec.get('ImageUrl') or '').split(':')[-1][:36])
+        if line != last:
+            print(line)
+            last = line
         low = status.lower()
         if 'fail' in low or 'error' in low or 'rollback' in low or 'stop' in low:
             die('❌ 部署失败: 状态=%s，请到控制台查看构建日志（RunId=%s）' % (status, rec.get('RunId')))
-        if 'success' in low or 'done' in low or 'finish' in low or 'normal' in low or 'released' in low:
-            print('✅ 部署成功: 版本已全量上线')
-            return
+        # 成功判定：新记录 normal 且已切流量（HasTraffic/FlowRatio>0），或出现多条新记录说明构建+发布都完成
+        if 'normal' in low:
+            traffic_ok = any(str(x.get('FlowRatio') or 0) not in ('0', '') or x.get('HasTraffic')
+                             for x in new_records)
+            if traffic_ok or len(new_records) >= 2:
+                print('✅ 部署成功: 版本已全量上线 (%s)' %
+                      ((rec.get('ImageUrl') or '').split(':')[-1][:36]))
+                return
     die('⏰ 部署超时（%d 分钟），请到控制台查看服务 %s 状态' % (TIMEOUT_MIN, SERVER_NAME))
 
 
