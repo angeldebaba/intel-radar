@@ -12,6 +12,7 @@ import time
 import html as html_mod
 import random
 import threading
+from datetime import datetime, timedelta
 from urllib.parse import quote, urljoin, urlparse
 
 import requests
@@ -177,6 +178,38 @@ def _extract_date(text):
     return ''
 
 
+def _norm_date(s):
+    """把 _extract_date 提取的原始字符串规范化为 YYYY-MM-DD；无效返回 ''"""
+    if not s:
+        return ''
+    s = s.replace('年', '-').replace('月', '-').replace('日', '').replace('/', '-')
+    parts = [p for p in s.split('-') if p]
+    try:
+        if len(parts) == 3:
+            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+            if y < 100:  # 两位年份
+                y += 2000
+            return '%04d-%02d-%02d' % (y, m, d)
+        if len(parts) == 2:  # MM-DD，默认当年
+            m, d = int(parts[0]), int(parts[1])
+            return '%04d-%02d-%02d' % (datetime.now().year, m, d)
+    except (ValueError, IndexError):
+        return ''
+    return ''
+
+
+def _is_stale(published, days=None):
+    """发布时间超过 N 天视为过期旧文；无法解析发布时间的不拦截"""
+    if not published:
+        return False
+    limit = days if days is not None else config.FRESH_DAYS
+    try:
+        pub = datetime.strptime(published, '%Y-%m-%d')
+    except ValueError:
+        return False
+    return (datetime.now() - pub).days > limit
+
+
 # ==================== 搜索引擎采集 ====================
 
 def fetch_baidu_news(query, max_results=8):
@@ -186,8 +219,8 @@ def fetch_baidu_news(query, max_results=8):
     _request_get('https://www.baidu.com/', timeout=8, referer='https://www.baidu.com/')
     time.sleep(random.uniform(0.3, 0.8))
 
-    # 使用百度主站资讯搜索（结构更稳定）
-    url = 'https://www.baidu.com/s?rtt=1&bsst=1&cl=2&tn=news&word={}&ie=utf-8'.format(quote(query))
+    # 使用百度主站资讯搜索（rtt=4 按时间排序，优先返回最新新闻）
+    url = 'https://www.baidu.com/s?rtt=4&bsst=1&cl=2&tn=news&word={}&ie=utf-8'.format(quote(query))
     resp = _request_get(url, timeout=12, referer='https://www.baidu.com/')
     if not resp:
         return items
@@ -257,7 +290,11 @@ def _unescape_baidu_link(jump_url):
 
 def fetch_bing(query, max_results=8):
     """必应中国搜索：返回 [{title,url,source,summary,published}]"""
-    url = 'https://cn.bing.com/search?q={}&setmkt=zh-CN&setlang=zh-CN&FORM=BEHPTB'.format(quote(query))
+    # ez5 时间过滤：限定最近 FRESH_DAYS 天（ez5 参数值为"epoch天数"区间，格式错误时必应自动忽略）
+    _day = int(time.time() // 86400)
+    _fresh = 'ex1%3a%22ez5_{}_{}%22'.format(max(0, _day - config.FRESH_DAYS), _day)
+    url = ('https://cn.bing.com/search?q={}&setmkt=zh-CN&setlang=zh-CN'
+           '&filters={}&FORM=BEHPTB').format(quote(query), _fresh)
     items = []
     resp = _request_get(url, timeout=12, referer='https://cn.bing.com/')
     if not resp:
@@ -306,11 +343,12 @@ def fetch_bing(query, max_results=8):
         source = _clean_text(source_el.get_text() if source_el else '')
         if not source:
             source = '必应'
+        published = _norm_date(_extract_date(_clean_text(li.get_text())))
         items.append({
             'title': title,
             'url': link,
             'source': source,
-            'published': '',
+            'published': published,
             'summary': summary,
         })
         if len(items) >= max_results:
@@ -360,7 +398,8 @@ def fetch_sogou_web(query, max_results=8):
         _warmup_done = True
         time.sleep(random.uniform(1.0, 2.0))
 
-    url = 'https://www.sogou.com/web?query={}&page=1'.format(quote(query))
+    # tsn=3 限定"一月内"结果，避免综合排序翻出多年前的旧文
+    url = 'https://www.sogou.com/web?query={}&page=1&tsn=3'.format(quote(query))
     items = []
     resp = _request_get(url, timeout=12, referer='https://www.sogou.com/')
     if not resp:
@@ -957,6 +996,15 @@ def collect_once():
                 continue
             url_seen.add(url)
             title_seen.add(title)
+            # 发布时间规范化（发布时间抓取失败时尝试从标题/正文提取）
+            published = _norm_date(it.get('published') or '')
+            if not published:
+                published = _norm_date(_extract_date(title + ' ' + (it.get('summary') or '')))
+            it['published'] = published
+            # 时效过滤：能确定发布时间且超出 FRESH_DAYS 天的旧文直接丢弃
+            if published and _is_stale(published):
+                database.log('collect', '超龄旧文跳过({}发布): {}'.format(published, title[:40]), 'ok')
+                continue
             # 正文预筛：导航页/聚合页/空壳页（正文<60字）没有可提炼内容，
             # AI 拿不到信息只会产出垃圾摘要，直接跳过省 API 调用
             body = (it.get('summary') or it.get('description') or '').strip()
@@ -1011,6 +1059,7 @@ def collect_once():
                 'image': it.get('image', ''),
                 'relevance': rel,
                 'tags': tags,
+                'published': it.get('published', ''),
             })
             if ok:
                 added += 1

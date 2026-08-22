@@ -113,15 +113,18 @@ def init_db():
     ]:
         cur.execute(sql)
 
-    # 兼容老库：补充 image 字段
+    # 兼容老库：补充 image / published 字段
     try:
         if PG:
             cur.execute("ALTER TABLE intelligence ADD COLUMN IF NOT EXISTS image TEXT DEFAULT ''")
+            cur.execute("ALTER TABLE intelligence ADD COLUMN IF NOT EXISTS published TEXT DEFAULT ''")
         else:
             cur.execute("PRAGMA table_info(intelligence)")
             cols = [r[1] for r in cur.fetchall()]
             if 'image' not in cols:
                 cur.execute("ALTER TABLE intelligence ADD COLUMN image TEXT DEFAULT ''")
+            if 'published' not in cols:
+                cur.execute("ALTER TABLE intelligence ADD COLUMN published TEXT DEFAULT ''")
     except Exception as e:
         database_log = None  # 迁移失败不应阻塞启动
 
@@ -206,10 +209,10 @@ def add_intelligence(item):
         (title, url))
     if exist:
         return False
-    placeholders = ','.join([PH] * 12)
+    placeholders = ','.join([PH] * 13)
     execute('''
         INSERT INTO intelligence
-        (date, vendor, industry, title, source, url, summary, description, image, relevance, tags, collected_at)
+        (date, vendor, industry, title, source, url, summary, description, image, relevance, tags, published, collected_at)
         VALUES (''' + placeholders + ''')''', (
         item.get('date', today_str()),
         item.get('vendor', ''),
@@ -222,6 +225,7 @@ def add_intelligence(item):
         item.get('image', ''),
         int(item.get('relevance', 3)),
         json.dumps(item.get('tags', []), ensure_ascii=False),
+        item.get('published', ''),
         now_str(),
     ))
     backup_db()

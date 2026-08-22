@@ -651,7 +651,7 @@ function cardHtml(it){
       '<div class="card-meta">'+chips+tags+'</div>'+
       '<div class="card-summary'+clampCls+'" id="sum-'+it.id+'">'+esc(sumText)+'</div>'+
       '<div class="card-foot">'+
-        '<span class="date">'+it.date+'</span>'+
+        '<span class="date">'+(it.published && it.published!==it.date ? ('发布 '+it.published+' · 采集 '+it.date) : it.date)+'</span>'+
         expandBtn+
       '</div>'+
     '</div>';

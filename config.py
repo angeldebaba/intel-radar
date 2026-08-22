@@ -40,6 +40,9 @@ MAX_PER_QUERY = int(os.environ.get('MAX_PER_QUERY', 6))   # 每个查询取前N�
 # 手动采集冷却期（小时）：冷却期内重复采集因全局去重不会新增，且易触发搜索引擎风控
 MANUAL_COOLDOWN_HOURS = float(os.environ.get('MANUAL_COOLDOWN_HOURS', '4'))
 
+# 时效控制：文章发布时间超过N天不入库（官网+搜索引擎结果统一按此过滤）
+FRESH_DAYS = int(os.environ.get('FRESH_DAYS', '30'))
+
 # 厂商列表：name=中文名, key=搜索关键词（多个组合）
 VENDORS = [
     {'name': '海康威视', 'keywords': ['海康威视 数字孪生', '海康威视 视频融合', '海康威视 三维可视化']},
