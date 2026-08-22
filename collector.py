@@ -957,6 +957,12 @@ def collect_once():
                 continue
             url_seen.add(url)
             title_seen.add(title)
+            # 正文预筛：导航页/聚合页/空壳页（正文<60字）没有可提炼内容，
+            # AI 拿不到信息只会产出垃圾摘要，直接跳过省 API 调用
+            body = (it.get('summary') or it.get('description') or '').strip()
+            if len(body) < 60:
+                database.log('collect', '预筛跳过无正文页: {}'.format(title[:40]), 'ok')
+                continue
             candidates.append(it)
         if not candidates:
             return
