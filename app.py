@@ -488,7 +488,7 @@ REPROCESS = {'running': False, 'total': 0, 'done': 0, 'updated': 0,
 
 
 def _run_reprocess():
-    """后台线程：对存量短摘要(<100字)重跑 AI 速览；无正文/低分条目直接清理"""
+    """后台线程：清理无正文/超龄旧文，对存量短摘要(<100字)重跑 AI 速览；低分条目直接清理"""
     st = REPROCESS
     st.update(running=True, total=0, done=0, updated=0, deleted=0,
               failed=0, finished_at='', log=[])
@@ -501,7 +501,23 @@ def _run_reprocess():
             st['deleted'] += 1
         st['log'].append('清理无正文条目: {} 条'.format(len(rows)))
 
-        # 第二步：AI 重跑短摘要
+        # 第二步：清理超龄旧文（能解析出发布时间且超过 FRESH_DAYS 天的）
+        rows = database.query('SELECT id, title, description, published FROM intelligence')
+        stale = []
+        for r in rows:
+            pub = r['published'] or collector._norm_date(
+                collector._extract_date((r['title'] or '') + ' ' + (r['description'] or '')))
+            if pub and not r['published']:
+                database.execute('UPDATE intelligence SET published=? WHERE id=?',
+                                 (pub, r['id']))
+            if pub and collector._is_stale(pub):
+                stale.append(r['id'])
+        for rid in stale:
+            database.execute('DELETE FROM intelligence WHERE id=?', (rid,))
+            st['deleted'] += 1
+        st['log'].append('清理超龄旧文(发布>{}天): {} 条'.format(config.FRESH_DAYS, len(stale)))
+
+        # 第三步：AI 重跑短摘要
         rows = database.query(
             'SELECT id, title, summary, description, vendor, tags '
             'FROM intelligence WHERE length(summary) < 100 ORDER BY id')
