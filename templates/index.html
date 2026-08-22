@@ -61,9 +61,8 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 /* 带图卡片：头图横幅式（图铺满卡顶），与纯文字卡片形成错落对比 */
 .intel-card.has-image{padding:0;overflow:hidden;gap:0;}
 .intel-card.has-image .card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;padding:13px 16px 14px;}
-.card-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--bg3);display:block;border-radius:0;flex-shrink:0;}
-/* 每 3 张换一种头图比例，制造节奏感 */
-.m-col .intel-card:nth-child(3n) .card-thumb{aspect-ratio:4/3;}
+.card-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--bg3);display:block;border-radius:0;flex-shrink:0;max-height:420px;}
+/* 图片加载后由 fitThumb() 按实际宽高比设置 aspect-ratio（限幅 1.4~2.6），加载前 16/9 只是预占位 */
 .card-top{display:flex;align-items:flex-start;gap:10px;}
 .card-badge{display:flex;flex-direction:column;align-items:center;min-width:34px;gap:2px;}
 .rel-stars{color:var(--orange);font-size:11px;letter-spacing:-1px;white-space:nowrap;}
@@ -221,7 +220,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   /* 卡片排版（瀑布流单列，头图自适应） */
   .card-title{font-size:14px;line-height:1.45;}
   .card-summary{font-size:12.5px;line-height:1.65;}
-  .card-thumb{aspect-ratio:16/10;}
+  .card-thumb{aspect-ratio:16/10;max-height:300px;}
   .rel-stars{font-size:10px;}
   /* 后台与登录 */
   .login-wrap{margin:24px 12px;padding:22px;}
@@ -688,7 +687,7 @@ function cardHtml(it){
   var clampCls = (it.summary || !it.description || it.description.length<=160) ? '' : ' clamp';
   INTEL_STORE[it.id] = it;   // 供展开/收起切换文案用
   if(hasAI) chips+='<span class="chip chip-ai">✨AI提炼</span>';
-  var thumb = it.image ? '<img class="card-thumb" src="'+esc(it.image)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '';
+  var thumb = it.image ? '<img class="card-thumb" src="'+esc(it.image)+'" loading="lazy" referrerpolicy="no-referrer" onload="fitThumb(this)" onerror="this.style.display=\'none\'">' : '';
   var cls = 'intel-card' + (thumb ? ' has-image' : '') + (it.relevance>=5 ? ' feat' : '');
   // 原文媒体：图片画廊（去掉已在缩略位显示的首图）+ 视频（mp4 直嵌 / 平台播放器点击加载）
   var media = it.media || {images:[],videos:[]};
@@ -774,6 +773,16 @@ function toggleFav(id,btn){
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 function jsq(s){ return esc(s).replace(/'/g,'\\x27'); }  // URL 内嵌 onclick 字符串参数用
+/* 头图按实际宽高比自适应：加载后读 naturalWidth/Height 设 aspect-ratio。
+   限幅 [1.4, 2.6]：竖图裁成 7:5 防止占据过高，超宽全景压到 2.6:1 防过扁。 */
+function fitThumb(img){
+  var w=img.naturalWidth||0, h=img.naturalHeight||0;
+  if(!w||!h) return;
+  var r=w/h;
+  if(r<1.4) r=1.4;
+  else if(r>2.6) r=2.6;
+  img.style.aspectRatio=r;
+}
 
 /* ===== 后台 ===== */
 function checkAdminStatus(){
