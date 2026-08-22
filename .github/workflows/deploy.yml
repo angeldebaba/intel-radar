@@ -1,0 +1,32 @@
+name: Deploy to CloudBase
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'HANDOFF.md'
+  workflow_dispatch:
+
+# 同一时间只允许一个部署任务，后续的排队（杜绝并发构建/重复版本）
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to CloudBase Run
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          TCB_SERVER_NAME: angel
+          TCB_REGION: ap-shanghai
+          TCB_ENV_ID: angel-d2gws9dnv51db45e2
+          TCB_BRANCH: main
+          GITHUB_SHA: ${{ github.sha }}
+        run: python3 deploy/tcb_deploy.py
