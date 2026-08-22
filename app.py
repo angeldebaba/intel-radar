@@ -411,6 +411,26 @@ def admin_collect():
     """异步启动采集：立即返回，后台线程执行，前端轮询 /api/admin/collect-status"""
     if collector.PROGRESS['running']:
         return jsonify({'ok': False, 'error': '采集正在进行中，请稍候'})
+    # 冷却保护：距上次采集完成太近时拦截（重复采集因全局去重不会新增，
+    # 且高频请求会触发搜索引擎风控，导致接下来几小时全部 0 结果）
+    force = request.args.get('force') == '1'
+    if not force and request.is_json:
+        force = bool((request.json or {}).get('force'))
+    finished_at = collector.PROGRESS.get('finished_at') or ''
+    if not force and finished_at:
+        try:
+            from datetime import datetime
+            last = datetime.strptime(finished_at, '%Y-%m-%d %H:%M:%S')
+            elapsed_h = (datetime.now() - last).total_seconds() / 3600.0
+            cooldown = float(config.MANUAL_COOLDOWN_HOURS)
+            if 0 <= elapsed_h < cooldown:
+                return jsonify({'ok': False, 'error': (
+                    '距上次采集完成仅 {:.1f} 小时（冷却期 {} 小时）。'
+                    '同一批文章已按标题/URL 全局去重，重复采集不会新增；'
+                    '频繁采集还会触发搜索引擎风控。确有必要请点「强制采集」。'
+                ).format(elapsed_h, cooldown)})
+        except (ValueError, TypeError):
+            pass
     t = threading.Thread(target=_run_collect, daemon=True)
     t.start()
     return jsonify({'ok': True, 'msg': '采集已启动', 'total': collector.PROGRESS['total']})
