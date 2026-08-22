@@ -134,6 +134,32 @@ def _is_antispider(text):
     return any(s in text for s in signs)
 
 
+# ==================== 引擎熔断 ====================
+# 某搜索引擎连续触发验证码时，本轮剩余查询自动跳过该引擎，
+# 避免"越打越封"（被风控后继续请求只会延长封禁时间）。
+_ENGINE_FAILS = {}
+_ENGINE_DISABLED = set()
+_ENGINE_FAIL_LIMIT = 2  # 连续 2 次验证码即熔断
+
+
+def _report_engine_fail(name):
+    """搜索引擎触发验证码时上报；达到阈值后本轮禁用"""
+    _ENGINE_FAILS[name] = _ENGINE_FAILS.get(name, 0) + 1
+    if _ENGINE_FAILS[name] >= _ENGINE_FAIL_LIMIT and name not in _ENGINE_DISABLED:
+        _ENGINE_DISABLED.add(name)
+        database.log('collect', '引擎[{}]连续触发验证码，本轮剩余查询自动跳过（避免延长封禁）'.format(name), 'warn')
+
+
+def _engine_blocked(name):
+    return name in _ENGINE_DISABLED
+
+
+def reset_engines():
+    """新一轮采集开始时重置熔断状态"""
+    _ENGINE_FAILS.clear()
+    _ENGINE_DISABLED.clear()
+
+
 def _extract_date(text):
     """从文本中提取常见日期格式"""
     if not text:
@@ -168,6 +194,7 @@ def fetch_baidu_news(query, max_results=8):
     text = resp.text
     if _is_antispider(text):
         database.log('collect', '百度资讯触发验证: {}'.format(query), 'warn')
+        _report_engine_fail('baidu')
         return items
 
     soup = BeautifulSoup(text, 'html.parser')
@@ -238,6 +265,7 @@ def fetch_bing(query, max_results=8):
     text = resp.text
     if _is_antispider(text):
         database.log('collect', '必应触发验证: {}'.format(query), 'warn')
+        _report_engine_fail('bing')
         return items
 
     soup = BeautifulSoup(text, 'html.parser')
@@ -340,6 +368,7 @@ def fetch_sogou_web(query, max_results=8):
     text = resp.text
     if _is_antispider(text):
         database.log('collect', '搜狗网页触发验证: {}'.format(query), 'warn')
+        _report_engine_fail('sogou')
         return items
 
     # 搜狗结果：容器内 h3 a 为标题，摘要取常见摘要节点或容器文本
@@ -691,33 +720,42 @@ def fetch_query(query, vendor_name='', max_results=6, use_official=True, use_sea
         all_items.extend(official)
         time.sleep(0.5)
 
-    # 搜索引擎仅作为补充，降低风控概率
+    # 搜索引擎仅作为补充，降低风控概率（触发验证码达到阈值的引擎本轮自动跳过）
     if use_search:
         # 2. 搜狗（辅源）
-        try:
-            sogou = fetch_sogou_web(query, max_results=max_results)
-            counts['sogou'] = len(sogou)
-            all_items.extend(sogou)
-        except Exception as e:
-            database.log('collect', '搜狗异常: {} | {}'.format(query, e), 'warn')
-        time.sleep(0.8)
+        if _engine_blocked('sogou'):
+            counts['sogou'] = -1  # -1 表示本轮已熔断跳过
+        else:
+            try:
+                sogou = fetch_sogou_web(query, max_results=max_results)
+                counts['sogou'] = len(sogou)
+                all_items.extend(sogou)
+            except Exception as e:
+                database.log('collect', '搜狗异常: {} | {}'.format(query, e), 'warn')
+            time.sleep(0.8)
 
         # 3. 必应（辅源）
-        try:
-            bing = fetch_bing(query, max_results=max_results)
-            counts['bing'] = len(bing)
-            all_items.extend(bing)
-        except Exception as e:
-            database.log('collect', '必应异常: {} | {}'.format(query, e), 'warn')
-        time.sleep(0.5)
+        if _engine_blocked('bing'):
+            counts['bing'] = -1
+        else:
+            try:
+                bing = fetch_bing(query, max_results=max_results)
+                counts['bing'] = len(bing)
+                all_items.extend(bing)
+            except Exception as e:
+                database.log('collect', '必应异常: {} | {}'.format(query, e), 'warn')
+            time.sleep(0.5)
 
         # 4. 百度（备用）
-        try:
-            baidu = fetch_baidu_news(query, max_results=max_results)
-            counts['baidu'] = len(baidu)
-            all_items.extend(baidu)
-        except Exception as e:
-            database.log('collect', '百度异常: {} | {}'.format(query, e), 'warn')
+        if _engine_blocked('baidu'):
+            counts['baidu'] = -1
+        else:
+            try:
+                baidu = fetch_baidu_news(query, max_results=max_results)
+                counts['baidu'] = len(baidu)
+                all_items.extend(baidu)
+            except Exception as e:
+                database.log('collect', '百度异常: {} | {}'.format(query, e), 'warn')
 
     # 去重：同 URL 只留一个；优先保留官网来源
     seen = {}
@@ -732,8 +770,12 @@ def fetch_query(query, vendor_name='', max_results=6, use_official=True, use_sea
     for r in results:
         if not r.get('source'):
             r['source'] = '网络'
+    def _c(n):
+        # -1 表示该引擎本轮已被熔断跳过
+        return '熔断' if n < 0 else str(n)
     database.log('collect', '聚合[{}] 官网{} 搜狗{} 必应{} 百度{} 去重后{}'.format(
-        query, counts['official'], counts['sogou'], counts['bing'], counts['baidu'], len(results)), 'ok')
+        query, counts['official'], _c(counts['sogou']), _c(counts['bing']),
+        _c(counts['baidu']), len(results)), 'ok')
     return results
 
 
@@ -882,6 +924,7 @@ def collect_once():
     """执行一次完整采集，返回新增条数。每天晚上低频率运行。"""
     added = 0
     errors = 0
+    reset_engines()  # 新一轮采集重置引擎熔断状态
 
     # 任务分组：
     # 阶段 A：先抓所有配置厂商的官网（主源）
