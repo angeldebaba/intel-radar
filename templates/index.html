@@ -379,6 +379,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
         <h3>⚡ 手动操作</h3>
         <div class="row-flex">
           <button class="btn btn-orange" onclick="manualCollect()" id="btnCollect">🔍 立即采集</button>
+          <button class="btn" onclick="runReprocess()" id="btnReprocess" title="存量短摘要重跑AI速览；无正文/低分条目自动清理">🧹 数据整理</button>
           <button class="btn" onclick="manualPush()" id="btnPush">📤 推送今日Top3</button>
           <button class="btn btn-green" onclick="testPush()" id="btnTest">🧪 测试推送</button>
           <button class="btn" onclick="runDiagnose()" id="btnDiag" title="检测百度/必应/搜狗在云端是否返回结果">🔧 诊断采集</button>
@@ -879,6 +880,40 @@ function manualPush(){
   api('/api/admin/push-now',{method:'POST'}).then(function(res){
     b.disabled=false; b.textContent='📤 推送今日Top3';
     document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">'+res.msg+'</span>' : '<span class="msg err">'+res.msg+'</span>';
+  });
+}
+var _reprocessTimer=null;
+function runReprocess(){
+  var b=document.getElementById('btnReprocess');
+  if(!window.confirm('将用 AI 重跑所有短摘要（<100字）并清理无正文/低分条目，预计1-2分钟。继续？')) return;
+  b.disabled=true; b.textContent='整理中…';
+  document.getElementById('opMsg').innerHTML='<span class="msg">数据整理已启动，正在分批调用 AI 重跑存量摘要…</span>';
+  api('/api/admin/reprocess',{method:'POST'}).then(function(res){
+    if(!res.ok){
+      b.disabled=false; b.textContent='🧹 数据整理';
+      document.getElementById('opMsg').innerHTML='<span class="msg err">'+(res.error||res.msg||'启动失败')+'</span>';
+      return;
+    }
+    if(_reprocessTimer) clearInterval(_reprocessTimer);
+    _reprocessTimer=setInterval(function(){
+      api('/api/admin/reprocess-status').then(function(r){
+        if(!r.ok) return;
+        var p=r.data;
+        if(p.running){
+          var pct = p.total? Math.round(p.done/p.total*100):0;
+          document.getElementById('opMsg').innerHTML='<span class="msg">整理进度 '+pct+'%（'+p.done+'/'+p.total+'）· 升级 '+p.updated+' 条 · 清理 '+p.deleted+' 条 …</span>';
+        }else{
+          clearInterval(_reprocessTimer); _reprocessTimer=null;
+          b.disabled=false; b.textContent='🧹 数据整理';
+          var tail = p.failed>0 ? '，'+p.failed+' 条失败' : '';
+          document.getElementById('opMsg').innerHTML='<span class="msg ok">✅ 整理完成：升级 '+p.updated+' 条，清理 '+p.deleted+' 条'+tail+'</span>';
+          loadAll(); loadOverview();
+        }
+      }).catch(function(){});
+    }, 3000);
+  }).catch(function(){
+    b.disabled=false; b.textContent='🧹 数据整理';
+    document.getElementById('opMsg').innerHTML='<span class="msg err">启动失败，请检查网络后重试</span>';
   });
 }
 function testPush(){
