@@ -29,8 +29,10 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'luban2026')
 AI_API_KEY = os.environ.get('AI_API_KEY', '')
 AI_API_BASE = os.environ.get('AI_API_BASE', 'https://open.bigmodel.cn/api/paas/v4')
 AI_MODEL = os.environ.get('AI_MODEL', 'glm-4-flash')
-AI_MIN_SCORE = int(os.environ.get('AI_MIN_SCORE', '2'))  # AI 评分低于此值丢弃
+AI_MIN_SCORE = int(os.environ.get('AI_MIN_SCORE', '3'))  # AI 评分低于此值丢弃（2026-08-23: 2→3 提质）
 AI_BATCH_SIZE = int(os.environ.get('AI_BATCH_SIZE', '10'))  # 每次请求合并分析的条数
+# 相关度入库下限：关键词评分路径低于此值直接丢弃（与 AI_MIN_SCORE 对齐）
+MIN_RELEVANCE = int(os.environ.get('MIN_RELEVANCE', '3'))
 
 # ===== 采集配置 =====
 # 采集与推送时间（24小时制 HH:MM，服务器时区）
@@ -88,8 +90,10 @@ INDUSTRY_QUERIES = [
     '三维可视化 智慧园区',
 ]
 
-# 相关度评分关键词
-RELEVANCE_HIGH = ['数字孪生', '视频融合', '三维可视化', '三维引擎', '数字底座', '孪生底座', '时空底座']
+# 相关度评分关键词（2026-08-23: 新增 视频孪生/三维/可视化 入 HIGH，与 MIN_RELEVANCE=3 配合，
+# 核心词单独命中即达入库线；三维/可视化 同时保留在 MEDIUM 形成叠加计分）
+RELEVANCE_HIGH = ['数字孪生', '视频融合', '三维可视化', '三维引擎', '数字底座', '孪生底座', '时空底座',
+                  '视频孪生', '三维', '可视化']
 RELEVANCE_MEDIUM = ['智慧医院', '智慧校园', '智慧园区', '可视化', '三维', 'BIM', 'GIS', 'CIM', '孪生', '元宇宙']
 RELEVANCE_LOW = ['安防', '监控', '摄像头', '物联网', 'AI', '人工智能', '大模型', '云平台']
 

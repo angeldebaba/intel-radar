@@ -1440,6 +1440,13 @@ def collect_once():
                 rel = score_relevance(title, raw_summary)
                 tags = detect_tags(title, raw_summary)
 
+            # 相关度下限：低于 MIN_RELEVANCE(默认3) 丢弃，控制入库质量
+            # （AI 路径已按 AI_MIN_SCORE 过滤，此处统一兜底，对两条路径生效）
+            if rel < config.MIN_RELEVANCE:
+                database.log('collect',
+                             '相关度不足丢弃[{}分]: {}'.format(rel, title[:45]), 'ok')
+                continue
+
             industry = detect_industry(title, raw_summary)
 
             # 媒体抓取：抓文章页提取图片/视频嵌入卡片（限额控制总耗时）
