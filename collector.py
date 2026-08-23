@@ -697,17 +697,28 @@ def fetch_bing(query, max_results=8):
     soup = BeautifulSoup(text, 'html.parser')
     NOISE_DOMAINS = ['baike.baidu.com', 'wikipedia.org', 'zhihu.com/question',
                      'www.zhihu.com', 'tieba.baidu.com', 'quote.eastmoney.com',
-                     'download.', 'ws.com.cn', 'products']
-    # 必应新版结果结构：li.b_algo 或 div.b_algo 或 div[data-idx]
-    candidates = soup.select('li.b_algo, div.b_algo, div.b_title')
+                     'download.', 'ws.com.cn']
+    # 必应结果选择器：覆盖多版本 HTML 结构（b_algo / b_result / tilk / algo-sr）
+    candidates = soup.select(
+        'li.b_algo, div.b_algo, div.b_title, '
+        'li.b_result, div.b_result, '
+        'li.tilk, li[data-form], div.algo-sr')
+    # 兜底：如果主选择器没命中，尝试 h2 a 祖先节点
+    if not candidates:
+        h2_links = soup.select('h2 a')
+        candidates = []
+        for a in h2_links:
+            parent = a.find_parent(['li', 'div'])
+            if parent:
+                candidates.append(parent)
     skipped = 0
     for li in candidates[:max_results * 3]:
-        a = li.select_one('h2 a') or li.select_one('a')
+        a = li.select_one('h2 a') or li.select_one('a[href]')
         if not a:
             continue
         title = _clean_text(a.get_text())
         link = a.get('href', '')
-        if not title or not link or len(title) < 10:
+        if not title or not link or len(title) < 8:
             skipped += 1
             continue
         if any(nd in link for nd in NOISE_DOMAINS):
@@ -722,11 +733,12 @@ def fetch_bing(query, max_results=8):
         if any(path_lower.endswith('/' + x) for x in ['products', 'product', 'download', 'downloads']):
             skipped += 1
             continue
-        # 保留路径较深或标题明显相关的页面
-        if path_lower.count('/') <= 1 and not any(k in title for k in config.RELEVANCE_HIGH):
+        # 放宽路径过滤：只过滤纯根路径（无子路径且标题无任何行业相关词）
+        if path_lower.count('/') < 1 and not any(
+                k in title for k in config.RELEVANCE_HIGH + config.RELEVANCE_MEDIUM):
             skipped += 1
             continue
-        summary_el = li.select_one('p, div.b_caption')
+        summary_el = li.select_one('p, div.b_caption, div.b_caption p')
         summary = _clean_text(summary_el.get_text() if summary_el else '')
         source_el = li.select_one('cite, div.b_attribution, span[dir="ltr"]')
         source = _clean_text(source_el.get_text() if source_el else '')
@@ -742,7 +754,8 @@ def fetch_bing(query, max_results=8):
         })
         if len(items) >= max_results:
             break
-    database.log('collect', '必应[{}] 原始结果{}条 跳过{}条 有效{}条'.format(query, len(candidates), skipped, len(items)), 'ok')
+    database.log('collect', '必应[{}] 原始结果{}条 跳过{}条 有效{}条'.format(
+        query, len(candidates), skipped, len(items)), 'ok')
     return items
 
 
@@ -858,6 +871,8 @@ _CONTENT_PATHS = {'news', 'article', 'detail', 'solutions', 'solution',
                   'information', 'info', 'press', 'events', 'blog'}
 
 # 厂商官网配置：主源，每天低频次抓取
+# 2026-08-23 更新失效 URL：biosphere3.com→smartyunzhou.com, 51world.com.cn 旧路径→新首页,
+#   supermap.com.cn 旧路径→/cn, digihail.com 旧路径→首页, 移除 dahuatech/sensetime 的 404 方案页
 OFFICIAL_CONFIG = [
     {'vendor': '海康威视', 'keywords': ['数字孪生', '视频融合', '三维', '智慧', '发布', '方案'],
      'pages': [
@@ -867,14 +882,11 @@ OFFICIAL_CONFIG = [
      ]},
     {'vendor': '智汇云舟', 'keywords': ['数字孪生', '视频融合', '三维', '孪生', '视频', '智慧'],
      'pages': [
-         'http://www.biosphere3.com/news/',
-         'http://www.biosphere3.com/solution/',
-         'http://www.biosphere3.com/case/',
+         'https://www.smartyunzhou.com/NewsInfoCategory?categoryId=583371',
      ]},
     {'vendor': '51WORLD', 'keywords': ['数字孪生', '三维', '发布', '方案', '智慧', '元宇宙'],
      'pages': [
-         'http://www.51world.com.cn/news.html',
-         'http://www.51world.com.cn/solution.html',
+         'https://www.51world.com.cn/',
      ]},
     {'vendor': '优锘科技', 'keywords': ['数字孪生', '三维', '可视化', '发布', '方案', '智慧'],
      'pages': [
@@ -884,7 +896,6 @@ OFFICIAL_CONFIG = [
     {'vendor': '大华股份', 'keywords': ['数字孪生', '视频融合', '三维', '智慧', '发布', '方案'],
      'pages': [
          'https://www.dahuatech.com/news/',
-         'https://www.dahuatech.com/solution/',
      ]},
     {'vendor': '华为', 'keywords': ['数字孪生', '三维', '智慧园区', '智慧建筑', '发布', '方案'],
      'pages': [
@@ -893,18 +904,16 @@ OFFICIAL_CONFIG = [
      ]},
     {'vendor': '超图软件', 'keywords': ['数字孪生', '三维GIS', 'GIS', '发布', '方案'],
      'pages': [
-         'http://www.supermap.com.cn/news/',
-         'http://www.supermap.com.cn/solution/',
+         'http://www.supermap.com.cn/cn',
+         'https://www.supermap.com/zh-cn/a/news/',
      ]},
     {'vendor': '数字冰雹', 'keywords': ['数字孪生', '三维', '可视化', '发布', '方案'],
      'pages': [
-         'http://www.digihail.com/news/',
-         'http://www.digihail.com/solution/',
+         'http://www.digihail.com/',
      ]},
     {'vendor': '商汤科技', 'keywords': ['数字孪生', '三维', '重建', '发布', '方案', '智慧'],
      'pages': [
          'https://www.sensetime.com/cn/news',
-         'https://www.sensetime.com/cn/solution',
      ]},
 ]
 

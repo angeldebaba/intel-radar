@@ -30,14 +30,9 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .topbar-links a:hover{color:var(--blue);background:var(--bg3);}
 #btnBack{display:none;}
 
-/* ===== 日期导航 ===== */
+/* ===== 统计栏 ===== */
 .datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 10px;}
-.date-nav{display:flex;align-items:center;gap:4px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:4px;overflow-x:auto;max-width:100%;}
-.date-nav button{background:none;border:none;color:var(--text2);padding:5px 12px;font-size:13px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:all .15s;}
-.date-nav button:hover{color:var(--text);background:var(--bg3);}
-.date-nav button.active{color:var(--blue);background:rgba(88,166,255,.15);font-weight:600;}
-.date-nav button.today-btn{color:var(--orange);font-weight:600;}
-.stats{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;}
+.stats{display:flex;gap:8px;flex-wrap:wrap;}
 .stat-chip{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:12px;color:var(--text2);white-space:nowrap;}
 .stat-chip b{color:var(--text);margin:0 2px;}
 
@@ -210,7 +205,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 @media(max-width:767px){
   .container{padding:10px;}
   .intel-card{padding:12px;}
-  .stats{width:100%;margin-left:0;}
+  .stats{width:100%;}
   .filters{position:sticky;top:52px;background:var(--bg);z-index:50;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:10px;}
   .admin-tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px;}
   .admin-tabs button{flex-shrink:0;padding:7px 12px;font-size:13px;}
@@ -223,7 +218,6 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   .filters .filter-clear{flex:0 0 auto;}
   /* 日期导航横向滚动占满宽度 */
   .datebar{gap:6px;margin:10px 0 8px;}
-  .date-nav{width:100%;-webkit-overflow-scrolling:touch;}
   /* 卡片排版（瀑布流单列，头图自适应） */
   .card-title{font-size:14px;line-height:1.45;}
   .card-summary{font-size:12.5px;line-height:1.65;}
@@ -259,9 +253,8 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 
 <!-- ========== 公开页：雷达 ========== -->
 <div id="view-radar">
-  <!-- 日期导航 + 统计 -->
+  <!-- 统计 -->
   <div class="datebar">
-    <div class="date-nav" id="dateNav"></div>
     <div class="stats" id="statsBar"></div>
   </div>
 
@@ -276,7 +269,6 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
       <option value="4">★★★★ 4+</option>
       <option value="3">★★★ 3+</option>
     </select>
-    <select id="fSort"><option value="rel">相关度优先</option><option value="new">最新优先</option></select>
     <input type="text" id="fKeyword" placeholder="搜索关键词…">
     <button class="filter-clear" onclick="clearFilters()">✕ 清空</button>
   </div>
@@ -285,7 +277,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   <div class="intel-grid" id="intelGrid"></div>
   <div class="empty-state hidden" id="emptyState">
     <div class="big">🛰️</div>
-    <div class="tip">今天还没有情报数据。<br>等每日自动采集跑起来后，这里会显示行业动态。</div>
+    <div class="tip">暂无情报数据。<br>等每日自动采集跑起来后，这里会显示行业动态。</div>
   </div>
   <div class="feed-footer" id="feedFooter"></div>
   <div id="feedSentinel" style="height:1px;"></div>
@@ -331,7 +323,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
       </div>
     </div>
     <div class="panel">
-      <h3>今日情报预览 <span class="hint">相关度最高的前6条</span></h3>
+      <h3>情报预览 <span class="hint">相关度最高的前6条</span></h3>
       <div class="intel-grid" id="ovToday"></div>
     </div>
   </div>
@@ -448,7 +440,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 </div><!-- /container -->
 
 <script>
-var state = { date: '', vendor: '', industry: '', tag: '', rel: '', keyword: '', sort: 'rel', page: 1, isAdmin: false };
+var state = { vendor: '', industry: '', tag: '', rel: '', keyword: '', sort: 'new', page: 1, isAdmin: false };
 var INTEL_STORE = {};   // 卡片数据缓存（展开/收起切换摘要用）
 var DAY_MS = 86400000;
 
@@ -475,7 +467,7 @@ function initRoute(){
 }
 
 /* ===== 公开页 ===== */
-function loadAll(){ loadDates(); loadStats(); loadFilters(); loadIntelligence(); }
+function loadAll(){ loadStats(); loadFilters(); loadIntelligence(); }
 
 /* ===== 趋势仪表盘 ===== */
 function loadTrend(){
@@ -521,36 +513,11 @@ function renderVendorChart(vendors){
   }).join('');
 }
 
-function loadDates(){
-  api('/api/dates').then(function(res){
-    if(!res.ok) return;
-    var dates = res.data, nav = document.getElementById('dateNav');
-    if(!dates.length){ dates=[todayStr()]; }
-    if(state.date && dates.indexOf(state.date)<0) dates.unshift(state.date);
-    var html = '<button onclick="shiftDate(-1)">◀</button>';
-    dates.slice(0,7).forEach(function(d){
-      var label = d===todayStr() ? '今日' : d.slice(5);
-      var cls = (d===state.date) ? 'active' : (d===todayStr() ? 'today-btn' : '');
-      html += '<button class="'+cls+'" onclick="setDate(\''+d+'\')">'+label+'</button>';
-    });
-    html += '<button onclick="shiftDate(1)">▶</button>';
-    nav.innerHTML = html;
-  });
-}
-function setDate(d){ state.date=d; loadIntelligence(); loadFilters(); loadDates(); }
-function shiftDate(dir){
-  var base = state.date ? new Date(state.date+'T00:00:00') : new Date();
-  base.setDate(base.getDate()+dir);
-  state.date = base.getFullYear()+'-'+String(base.getMonth()+1).padStart(2,'0')+'-'+String(base.getDate()).padStart(2,'0');
-  loadIntelligence(); loadDates();
-}
-
 function loadStats(){
   api('/api/stats').then(function(res){
     if(!res.ok) return;
     var s=res.data, el=document.getElementById('statsBar');
     el.innerHTML =
-      '<span class="stat-chip">今日 <b>'+s.today+'</b> 条</span>'+
       '<span class="stat-chip">收藏 <b>'+s.favorites+'</b> 条</span>'+
       '<span class="stat-chip">累计 <b>'+s.total+'</b> 条</span>'+
       '<span class="stat-chip">厂商 <b>'+s.vendors+'</b> 家</span>';
@@ -624,13 +591,13 @@ function loadIntelligence(){
   });
 }
 function feedQS(){
-  var qs='?date='+(state.date||todayStr());
+  var qs='?';
   if(state.vendor) qs+='&vendor='+encodeURIComponent(state.vendor);
   if(state.industry) qs+='&industry='+encodeURIComponent(state.industry);
   if(state.tag) qs+='&tag='+encodeURIComponent(state.tag);
   if(state.rel) qs+='&relevance='+state.rel;
   if(state.keyword) qs+='&q='+encodeURIComponent(state.keyword);
-  qs+='&sort='+(state.sort||'rel')+'&page_size=8';
+  qs+='&sort='+(state.sort||'new')+'&page_size=10';
   if(feed.cursor) qs+='&cursor='+encodeURIComponent(feed.cursor);
   return qs;
 }
@@ -845,7 +812,7 @@ function loadOverview(){
       '<div class="kv"><div class="num">'+s.vendors+'</div><div class="label">厂商覆盖</div></div>';
   });
   loadTrend();
-  api('/api/intelligence?date='+todayStr()+'&relevance=1&page_size=6').then(function(res){
+  api('/api/intelligence?relevance=1&page_size=6').then(function(res){
     var el=document.getElementById('ovToday');
     if(!res.ok || !res.data.length){ el.innerHTML='<div class="empty-state" style="padding:30px"><div class="big">🛰️</div><div class="tip">今日暂无数据，可去「采集推送」手动采集一次</div></div>'; return; }
     el.innerHTML=res.data.slice(0,6).map(cardHtml).join('');
@@ -1120,7 +1087,6 @@ document.getElementById('fVendor').addEventListener('change',function(){ state.v
 document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; loadIntelligence(); });
 document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; loadIntelligence(); });
 document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; loadIntelligence(); });
-document.getElementById('fSort').addEventListener('change',function(){ state.sort=this.value; loadIntelligence(); });
 var kwTimer;
 document.getElementById('fKeyword').addEventListener('input',function(){
   clearTimeout(kwTimer); var me=this;
@@ -1132,7 +1098,6 @@ window.addEventListener('scroll',function(){
 },{passive:true});
 
 /* ===== 启动 ===== */
-state.date = todayStr();
 initRoute();
 initFeedObserver();
 </script>

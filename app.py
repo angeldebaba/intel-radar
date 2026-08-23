@@ -102,13 +102,13 @@ def api_stats_trend():
 def api_intelligence():
     """情报列表：支持 vendor/industry/tag/relevance/fav/q 过滤 + 滚动游标分页。
 
-    - 首次请求（无 cursor）：按 date 过滤（默认今天）返回第一页 + next_cursor
-    - 带 cursor 请求：自动去掉日期过滤，跨日期加载更早记录（滚动增量加载）：
+    - 默认按全部日期查询，采集时间由新到旧排序
+    - 首次请求（无 cursor）：返回第一页（page_size 条）+ next_cursor
+    - 带 cursor 请求：按游标继续加载更早记录（滚动增量加载）：
         sort=new → 按 (date, id) 游标，新→旧
         sort=rel → 按 (relevance, id) 游标，相关度高→低
     """
     where, args = [], []
-    d = request.args.get('date') or database.today_str()
     vendor = request.args.get('vendor', '')
     industry = request.args.get('industry', '')
     tag = request.args.get('tag', '')
@@ -116,7 +116,7 @@ def api_intelligence():
     fav = request.args.get('fav', '')
     keyword = request.args.get('q', '')
     cursor = request.args.get('cursor', '')
-    sort = request.args.get('sort', 'rel')
+    sort = request.args.get('sort', 'new')
 
     if vendor:
         where.append('vendor=?')
@@ -136,14 +136,14 @@ def api_intelligence():
         where.append('(title LIKE ? OR summary LIKE ?)')
         args.extend(['%{}%'.format(keyword)] * 2)
 
-    if sort == 'new':
-        order_sql = 'date DESC, id DESC'
-    else:
-        sort = 'rel'
+    if sort == 'rel':
         order_sql = 'relevance DESC, id DESC'
+    else:
+        sort = 'new'
+        order_sql = 'date DESC, id DESC'
 
     if cursor:
-        # 滚动加载：去掉日期过滤，按游标跨日期取更早/更低优先级的记录
+        # 滚动加载：按游标取更早/更低优先级的记录
         try:
             key, last_id = cursor.rsplit('_', 1)
             last_id = int(last_id)
@@ -156,14 +156,12 @@ def api_intelligence():
             key = int(key)
             where.append('(relevance<? OR (relevance=? AND id<?))')
             args.extend([key, key, last_id])
-    else:
-        where.append('date=?')
-        args.append(d)
+    # 无 cursor 时不加日期过滤，默认查全部
 
     try:
-        page_size = min(50, max(1, int(request.args.get('page_size', 8))))
+        page_size = min(50, max(1, int(request.args.get('page_size', 10))))
     except ValueError:
-        page_size = 8
+        page_size = 10
 
     where_sql = ' AND '.join(where)
     rows = database.query(
@@ -191,7 +189,7 @@ def api_intelligence():
         except (ValueError, TypeError):
             r['media'] = {'images': [], 'videos': []}
 
-    # 首页才统计总数（按当日 + 筛选条件；此时 where 末位即 date=?，参数顺序一致）
+    # 首页才统计总数（按筛选条件，不限日期）
     total = 0
     if not cursor:
         total = database.query_one(
@@ -203,9 +201,9 @@ def api_intelligence():
 
 @app.route('/api/filters')
 def api_filters():
-    """获取所有可用的厂商/行业/标签 筛选选项"""
+    """获取所有可用的厂商/行业/标签 筛选选项（不限日期）"""
     rows = database.query(
-        'SELECT vendor, industry, tags FROM intelligence WHERE date=?', (database.today_str(),))
+        'SELECT vendor, industry, tags FROM intelligence')
     vendors, industries, tags = set(), set(), set()
     for r in rows:
         if r['vendor']:
