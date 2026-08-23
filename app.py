@@ -9,8 +9,9 @@ import re
 import threading
 import time
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from functools import wraps
+from urllib.parse import urlparse
 
 from flask import (Flask, render_template, request, jsonify, session,
                    send_from_directory)
@@ -49,6 +50,172 @@ def require_admin(f):
             return jsonify({'ok': False, 'error': '未登录'}), 401
         return f(*args, **kwargs)
     return wrapper
+
+
+# ==================== 访问统计埋点 ====================
+# 高并发策略：请求线程只做入队（内存 append，微秒级），后台线程每 5 秒批量落库
+_VISIT_QUEUE = []
+_VISIT_LOCK = threading.Lock()
+_VISIT_QUEUE_MAX = 5000          # 队列上限（防御性，超出丢弃最旧的）
+_SEARCH_ENGINES = ('baidu.', 'google.', 'bing.', 'sogou.', 'so.com', 'sm.cn',
+                   'quark', 'duckduckgo', 'yandex.', 'so.360.cn', 'qihoo')
+
+
+def _classify_referrer(ref, host=''):
+    """来源分类：direct 直接访问 / search 搜索引擎 / external 外部链接 / internal 站内跳转"""
+    if not ref:
+        return 'direct'
+    try:
+        rhost = urlparse(ref).netloc.lower()
+    except Exception:
+        return 'direct'
+    if not rhost:
+        return 'direct'
+    if host and rhost == host.lower():
+        return 'internal'
+    if any(e in rhost for e in _SEARCH_ENGINES):
+        return 'search'
+    return 'external'
+
+
+def _track_enqueue(rec):
+    """入队（请求线程调用，必须无阻塞）"""
+    with _VISIT_LOCK:
+        if len(_VISIT_QUEUE) >= _VISIT_QUEUE_MAX:
+            del _VISIT_QUEUE[:len(_VISIT_QUEUE) - _VISIT_QUEUE_MAX // 2]
+        _VISIT_QUEUE.append(rec)
+
+
+def _visit_flush_loop():
+    """后台线程：批量落库 + 每日清理超龄访问数据"""
+    last_purge = None
+    while True:
+        time.sleep(5)
+        global _VISIT_QUEUE
+        with _VISIT_LOCK:
+            batch, _VISIT_QUEUE = _VISIT_QUEUE, []
+        try:
+            if batch:
+                database.record_visit_batch(batch)
+        except Exception as e:
+            # 落库失败不影响业务；丢本批避免阻塞（原始数据本就是统计用途）
+            try:
+                database.log('visit_flush_error', str(e)[:200], status='warn')
+            except Exception:
+                pass
+        try:
+            today = date.today().isoformat()
+            if last_purge != today:
+                last_purge = today
+                database.purge_visit_log(config.VISIT_RETENTION_DAYS)
+        except Exception:
+            pass
+
+
+threading.Thread(target=_visit_flush_loop, daemon=True, name='visit-flush').start()
+
+
+@app.before_request
+def _track_api_hits():
+    """统计公开 API 接口访问（后台管理轮询接口与埋点接口本身不计）"""
+    try:
+        p = request.path
+        if (request.method == 'GET' and p.startswith('/api/')
+                and not p.startswith('/api/admin/') and p != '/api/track'):
+            ref = request.referrer or ''
+            ua = (request.headers.get('User-Agent') or '')
+            _track_enqueue({
+                'kind': 'hit', 'ts': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'path': p, 'sid': (request.cookies.get('ir_sid') or '')[:64],
+                'referrer': ref[:380],
+                'rtype': _classify_referrer(ref, urlparse(request.host_url).netloc),
+                'device': 'mobile' if re.search(r'Mobi|Android|iPhone', ua, re.I) else 'pc',
+            })
+    except Exception:
+        pass
+    return None
+
+
+@app.route('/api/track', methods=['POST'])
+def api_track():
+    """前端埋点上报：pageview（含来源/设备/会话）与 duration（停留时长）"""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        data = {}
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    sid = str(data.get('sid', ''))[:64]
+    if data.get('type') == 'duration':
+        try:
+            dur = int(float(data.get('duration', 0)))
+        except (TypeError, ValueError):
+            dur = 0
+        if sid and 0 < dur <= 86400:
+            _track_enqueue({'kind': 'duration', 'ts': now, 'sid': sid, 'duration': dur})
+        return jsonify({'ok': True})
+    # 默认 pageview
+    ref = str(data.get('referrer', ''))[:380]
+    _track_enqueue({
+        'kind': 'hit', 'ts': now,
+        'path': str(data.get('path', '/') or '/')[:190],
+        'sid': sid,
+        'referrer': ref,
+        'rtype': _classify_referrer(ref, urlparse(request.host_url).netloc),
+        'device': 'mobile' if data.get('device') == 'mobile' else 'pc',
+    })
+    return jsonify({'ok': True})
+
+
+@app.route('/api/admin/analytics')
+@require_admin
+def api_admin_analytics():
+    """访问统计报表：period=day(近30日)/week(近12周)/month(近12月)"""
+    period = request.args.get('period', 'day')
+    if period == 'week':
+        days = 84
+    elif period == 'month':
+        days = 365
+    else:
+        period, days = 'day', 30
+    d = database.analytics_query(days)
+
+    # 按周期分桶（visit_daily 已按日聚合，Python 侧分桶避免 SQL 方言差异）
+    def bucket(dt_str):
+        if period == 'day':
+            return dt_str[5:]
+        if period == 'month':
+            return dt_str[:7]
+        dt = datetime.strptime(dt_str, '%Y-%m-%d')
+        y, w, _ = dt.isocalendar()
+        return '%d-W%02d' % (y, w)
+
+    buckets = {}
+    for row in d['daily']:          # daily 已按 date 升序，桶保持时间顺序
+        k = bucket(row['date'])
+        b = buckets.setdefault(k, {'hits': 0, 'sessions': 0})
+        b['hits'] += row['hits'] or 0
+        b['sessions'] += row['sessions'] or 0
+    trend = [{'label': k, 'hits': v['hits'], 'sessions': v['sessions']}
+             for k, v in buckets.items()]
+
+    src_map = {r['t']: r['c'] for r in d['sources']}
+    total_hits = sum(src_map.values())
+    summary = {
+        'hits': total_hits,
+        'sessions': sum((r['sessions'] or 0) for r in d['daily']),
+        'avg_duration': round(float(d['sess'].get('avg_d') or 0)),
+        'max_duration': int(d['sess'].get('max_d') or 0),
+        'direct': src_map.get('direct', 0),
+        'search': src_map.get('search', 0),
+        'external': src_map.get('external', 0),
+        'internal': src_map.get('internal', 0),
+    }
+    return jsonify({'ok': True, 'data': {
+        'period': period, 'range_days': days,
+        'summary': summary, 'trend': trend,
+        'pages': d['pages'], 'sources': d['sources'],
+        'referrers': d['referrers'], 'recent': d['recent'],
+    }})
 
 
 # ==================== 页面 ====================

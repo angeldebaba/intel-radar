@@ -107,9 +107,40 @@ def init_db():
             status TEXT DEFAULT 'ok',
             created_at TEXT DEFAULT ''
         )''' % {'id': id_def},
+        '''CREATE TABLE IF NOT EXISTS visit_log (
+            id %(id)s,
+            ts TEXT NOT NULL,
+            date TEXT NOT NULL,
+            path TEXT DEFAULT '/',
+            session_id TEXT DEFAULT '',
+            referrer TEXT DEFAULT '',
+            referrer_type TEXT DEFAULT 'direct',
+            device TEXT DEFAULT 'pc'
+        )''' % {'id': id_def},
+        '''CREATE TABLE IF NOT EXISTS visit_session (
+            session_id TEXT PRIMARY KEY,
+            date TEXT DEFAULT '',
+            start_ts TEXT DEFAULT '',
+            last_ts TEXT DEFAULT '',
+            entry_path TEXT DEFAULT '/',
+            referrer TEXT DEFAULT '',
+            referrer_type TEXT DEFAULT 'direct',
+            device TEXT DEFAULT 'pc',
+            duration_sec INTEGER DEFAULT 0
+        )''',
+        '''CREATE TABLE IF NOT EXISTS visit_daily (
+            date TEXT NOT NULL,
+            path TEXT NOT NULL,
+            hits INTEGER DEFAULT 0,
+            sessions INTEGER DEFAULT 0,
+            PRIMARY KEY (date, path)
+        )''',
         'CREATE INDEX IF NOT EXISTS idx_intel_date ON intelligence(date)',
         'CREATE INDEX IF NOT EXISTS idx_intel_vendor ON intelligence(vendor)',
         'CREATE INDEX IF NOT EXISTS idx_intel_industry ON intelligence(industry)',
+        'CREATE INDEX IF NOT EXISTS idx_visitlog_date ON visit_log(date)',
+        'CREATE INDEX IF NOT EXISTS idx_visitlog_path ON visit_log(path)',
+        'CREATE INDEX IF NOT EXISTS idx_visitsess_date ON visit_session(date)',
     ]:
         cur.execute(sql)
 
@@ -252,3 +283,111 @@ def stats():
         'total': query_one('SELECT COUNT(*) AS c FROM intelligence')['c'],
         'vendors': query_one("SELECT COUNT(DISTINCT vendor) AS c FROM intelligence WHERE vendor!=''")['c'],
     }
+
+
+# ==================== 访问统计 ====================
+def record_visit_batch(records):
+    """批量落库访问统计：一个连接一个事务写完全部记录，降低高并发下的连接压力
+    records: [{'kind':'hit','ts','path','sid','referrer','rtype','device'},
+              {'kind':'duration','ts','sid','duration'}]
+    """
+    if not records:
+        return
+    hits = [r for r in records if r.get('kind') == 'hit']
+    durs = [r for r in records if r.get('kind') == 'duration']
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        # 1) 原始访问 + 日聚合
+        for r in hits:
+            ts = str(r.get('ts', ''))[:19]
+            d = ts[:10] or today_str()
+            path = str(r.get('path', '/') or '/')[:190]
+            sid = str(r.get('sid', '') or '')[:64]
+            cur.execute('INSERT INTO visit_log(ts,date,path,session_id,referrer,referrer_type,device) '
+                        'VALUES (' + ','.join([PH] * 7) + ')',
+                        (ts, d, path, sid,
+                         str(r.get('referrer', ''))[:380],
+                         str(r.get('rtype', 'direct'))[:16],
+                         str(r.get('device', 'pc'))[:8]))
+            cur.execute('INSERT INTO visit_daily(date,path,hits,sessions) VALUES (' + PH + ',' + PH + ',1,0) '
+                        'ON CONFLICT(date,path) DO UPDATE SET hits=visit_daily.hits+1', (d, path))
+        # 2) 会话：先查出已存在的，新的插入（并计入 sessions 聚合），旧的仅更新 last_ts
+        sids = {}
+        for r in hits:
+            sid = str(r.get('sid', '') or '')[:64]
+            if sid and sid not in sids:   # 首见优先：会话入口取首次访问
+                sids[sid] = r
+        if sids:
+            ph_in = ','.join([PH] * len(sids))
+            cur.execute('SELECT session_id FROM visit_session WHERE session_id IN (' + ph_in + ')',
+                        tuple(sids.keys()))
+            existing = {row[0] for row in cur.fetchall()}
+            for sid, r in sids.items():
+                ts = str(r.get('ts', ''))[:19]
+                d = ts[:10] or today_str()
+                path = str(r.get('path', '/') or '/')[:190]
+                if sid in existing:
+                    cur.execute('UPDATE visit_session SET last_ts=' + PH + ' WHERE session_id=' + PH,
+                                (ts, sid))
+                else:
+                    cur.execute('''INSERT INTO visit_session
+                        (session_id,date,start_ts,last_ts,entry_path,referrer,referrer_type,device,duration_sec)
+                        VALUES (''' + ','.join([PH] * 9) + ')',
+                        (sid, d, ts, ts, path,
+                         str(r.get('referrer', ''))[:380],
+                         str(r.get('rtype', 'direct'))[:16],
+                         str(r.get('device', 'pc'))[:8], 0))
+                    cur.execute('INSERT INTO visit_daily(date,path,hits,sessions) VALUES (' + PH + ',' + PH + ',0,1) '
+                                'ON CONFLICT(date,path) DO UPDATE SET sessions=visit_daily.sessions+1', (d, path))
+        # 3) 停留时长：只增不减（心跳/离场上报的秒数取最大值）
+        for r in durs:
+            sid = str(r.get('sid', '') or '')[:64]
+            if not sid:
+                continue
+            try:
+                dur = int(float(r.get('duration', 0)))
+            except (TypeError, ValueError):
+                dur = 0
+            if dur <= 0:
+                continue
+            dur = min(dur, 86400)
+            ts = str(r.get('ts', ''))[:19]
+            cur.execute('UPDATE visit_session SET duration_sec=CASE WHEN duration_sec<' + PH + ' THEN ' + PH +
+                        ' ELSE duration_sec END, last_ts=' + PH + ' WHERE session_id=' + PH,
+                        (dur, dur, ts, sid))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def analytics_query(days):
+    """访问统计报表原始聚合（报表只读 visit_daily 聚合表，不扫原始大表）"""
+    from datetime import timedelta
+    start = (datetime.now() - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    data = {
+        'daily': query('SELECT date, SUM(hits) AS hits, SUM(sessions) AS sessions '
+                       'FROM visit_daily WHERE date>=' + PH + ' GROUP BY date ORDER BY date', (start,)),
+        'pages': query('SELECT path, SUM(hits) AS hits, SUM(sessions) AS sessions '
+                       'FROM visit_daily WHERE date>=' + PH + ' GROUP BY path '
+                       'ORDER BY hits DESC LIMIT 15', (start,)),
+        'sources': query('SELECT referrer_type AS t, COUNT(*) AS c FROM visit_log '
+                         'WHERE date>=' + PH + ' GROUP BY referrer_type', (start,)),
+        'referrers': query("SELECT referrer, COUNT(*) AS c FROM visit_log WHERE date>=" + PH +
+                           " AND referrer_type IN ('search','external') AND referrer!='' "
+                           'GROUP BY referrer ORDER BY c DESC LIMIT 10', (start,)),
+        'sess': query_one('SELECT COUNT(*) AS c, COALESCE(AVG(duration_sec),0) AS avg_d, '
+                          'COALESCE(MAX(duration_sec),0) AS max_d FROM visit_session WHERE date>=' + PH,
+                          (start,)) or {'c': 0, 'avg_d': 0, 'max_d': 0},
+        'recent': query('SELECT ts, path, referrer_type, device, session_id FROM visit_log '
+                        'WHERE date>=' + PH + ' ORDER BY id DESC LIMIT 20', (start,)),
+    }
+    return data
+
+
+def purge_visit_log(keep_days=90):
+    """清理超龄访问原始数据（聚合表 visit_daily 保留，体积小）"""
+    from datetime import timedelta
+    cut = (datetime.now() - timedelta(days=keep_days)).strftime('%Y-%m-%d')
+    execute('DELETE FROM visit_log WHERE date<' + PH, (cut,))
+    execute('DELETE FROM visit_session WHERE date<' + PH, (cut,))

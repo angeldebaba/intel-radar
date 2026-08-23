@@ -148,6 +148,15 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .admin-tabs button{background:none;border:none;color:var(--text2);padding:8px 16px;font-size:13.5px;border-radius:8px;cursor:pointer;transition:all .15s;font-family:inherit;}
 .admin-tabs button:hover{color:var(--text);background:var(--bg3);}
 .admin-tabs button.active{color:var(--blue);background:rgba(88,166,255,.12);font-weight:600;}
+.ana-period{display:inline-flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:3px;}
+.ana-period button{background:none;border:none;color:var(--text2);padding:5px 12px;font-size:12.5px;border-radius:6px;cursor:pointer;}
+.ana-period button:hover{color:var(--text);}
+.ana-period button.active{color:var(--blue);background:rgba(88,166,255,.14);font-weight:600;}
+.ana-recent-item{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;}
+.ana-recent-item:last-child{border-bottom:none;}
+.ana-recent-item .t{color:var(--text3);font-size:12px;min-width:120px;}
+.ana-recent-item .p{color:var(--text);font-weight:500;word-break:break-all;}
+.ana-recent-item .meta{margin-left:auto;display:flex;gap:6px;}
 .panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px;}
 .panel h3{font-size:15px;margin-bottom:14px;color:var(--text);display:flex;align-items:center;gap:8px;}
 .panel h3 .hint{font-size:12px;color:var(--text3);font-weight:400;}
@@ -309,6 +318,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <button data-tab="dahua" onclick="switchTab('dahua')">大华功能</button>
     <button data-tab="analysis" onclick="switchTab('analysis')">竞品分析</button>
     <button data-tab="settings" onclick="switchTab('settings')">采集推送</button>
+    <button data-tab="analytics" onclick="switchTab('analytics')">访问统计</button>
     <button data-tab="logs" onclick="switchTab('logs')">运行日志</button>
   </div>
 
@@ -428,6 +438,49 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
         </div>
         <button class="btn btn-sm" onclick="saveSettings()">💾 保存设置</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 访问统计 -->
+  <div class="tab-panel hidden" id="tab-analytics">
+    <div class="panel" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <h3 style="margin:0;">📊 访问统计</h3>
+      <div class="ana-period" style="margin-left:auto;">
+        <button id="anaPDay" class="active" onclick="setAnaPeriod('day')">按日</button>
+        <button id="anaPWeek" onclick="setAnaPeriod('week')">按周</button>
+        <button id="anaPMonth" onclick="setAnaPeriod('month')">按月</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadAnalytics()">刷新</button>
+    </div>
+    <div class="kv-grid" id="anaStats"><div class="empty-mini">暂无数据</div></div>
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3>📈 访问趋势 <span class="hint" id="anaTrendHint"></span></h3>
+        <div id="anaTrend"><div class="empty-mini">暂无数据</div></div>
+      </div>
+      <div class="dash-card">
+        <h3>🔗 来源分布</h3>
+        <div id="anaSources"><div class="empty-mini">暂无数据</div></div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <h3>🔥 热门页面 / 接口 <span class="hint">Top 15</span></h3>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>页面 / 接口</th><th>访问次数</th><th>会话数</th><th>占比</th></tr></thead>
+            <tbody id="anaPagesBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>🌐 主要外部来源 <span class="hint">Top 10</span></h3>
+        <div id="anaReferrers"><div class="empty-mini">暂无数据</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>🕐 最近访问 <span class="hint">最近 20 条</span></h3>
+      <div id="anaRecent"><div class="empty-mini">暂无数据</div></div>
     </div>
   </div>
 
@@ -795,16 +848,123 @@ function adminLogout(){
 }
 function switchTab(tab){
   document.querySelectorAll('#adminTabs button').forEach(function(b){b.classList.toggle('active',b.dataset.tab===tab);});
-  ['overview','dahua','analysis','settings','logs'].forEach(function(t){
+  ['overview','dahua','analysis','settings','analytics','logs'].forEach(function(t){
     document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab);
   });
   if(tab==='overview') loadOverview();
   if(tab==='dahua') loadDahuaList();
   if(tab==='analysis') loadAnalysis();
   if(tab==='settings') loadSettings();
+  if(tab==='analytics') loadAnalytics();
   if(tab==='logs') loadLogs();
 }
 function loadAdminPanel(){ switchTab('overview'); }
+
+/* ===== 访问统计 ===== */
+var anaPeriod = 'day';
+function setAnaPeriod(p){
+  anaPeriod = p;
+  ['Day','Week','Month'].forEach(function(k){
+    document.getElementById('anaP'+k).classList.toggle('active', anaPeriod === k.toLowerCase());
+  });
+  loadAnalytics();
+}
+function fmtDur(sec){
+  sec = Math.round(sec || 0);
+  if(sec < 60) return sec + '秒';
+  if(sec < 3600) return Math.floor(sec/60) + '分' + (sec%60) + '秒';
+  return Math.floor(sec/3600) + '时' + Math.floor((sec%3600)/60) + '分';
+}
+var ANA_SRC = {direct:'直接访问', search:'搜索引擎', external:'外部链接', internal:'站内跳转'};
+var ANA_SRC_COLOR = {direct:'#58a6ff', search:'#3fb950', external:'#bc8cff', internal:'#8b949e'};
+function loadAnalytics(){
+  api('/api/admin/analytics?period=' + anaPeriod).then(function(res){
+    if(!res.ok || !res.data){ document.getElementById('anaStats').innerHTML='<div class="empty-mini">'+(res.error||'加载失败')+'</div>'; return; }
+    var d = res.data, s = d.summary;
+    document.getElementById('anaTrendHint').textContent = d.period==='day' ? '近30日' : (d.period==='week' ? '近12周' : '近12月');
+    document.getElementById('anaStats').innerHTML =
+      '<div class="kv"><div class="num">'+s.hits+'</div><div class="label">总访问量</div></div>'+
+      '<div class="kv"><div class="num">'+s.sessions+'</div><div class="label">访问会话</div></div>'+
+      '<div class="kv"><div class="num">'+fmtDur(s.avg_duration)+'</div><div class="label">平均停留</div></div>'+
+      '<div class="kv"><div class="num">'+fmtDur(s.max_duration)+'</div><div class="label">最长停留</div></div>';
+    renderAnaTrend(d.trend);
+    renderAnaSources(d.sources, s.hits);
+    renderAnaPages(d.pages, s.hits);
+    renderAnaReferrers(d.referrers);
+    renderAnaRecent(d.recent);
+  });
+}
+function renderAnaTrend(trend){
+  var el = document.getElementById('anaTrend');
+  if(!trend || !trend.length){ el.innerHTML='<div class="empty-mini">暂无数据</div>'; return; }
+  var W=700, H=190, pad=16, base=140, maxH=95;
+  var max = Math.max.apply(null, trend.map(function(x){ return Math.max(x.hits, x.sessions); }).concat([1]));
+  var n = trend.length, slot = (W-2*pad)/Math.max(n,1), bw = Math.max(slot*0.55, 4);
+  var s = '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block;">';
+  s += '<defs><linearGradient id="gA" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#58a6ff"/><stop offset="1" stop-color="#bc8cff"/></linearGradient></defs>';
+  s += '<line x1="'+pad+'" y1="'+base+'" x2="'+(W-pad)+'" y2="'+base+'" stroke="#30363d"/>';
+  var pts = [];
+  trend.forEach(function(d, i){
+    var h = Math.max(Math.round(d.hits/max*maxH), d.hits>0?4:1);
+    var x = pad + slot*i + (slot-bw)/2, y = base - h;
+    s += '<rect x="'+x.toFixed(1)+'" y="'+y+'" width="'+bw.toFixed(1)+'" height="'+h+'" rx="3" fill="url(#gA)"/>';
+    s += '<text x="'+(x+bw/2).toFixed(1)+'" y="'+(y-6)+'" fill="#e6edf3" font-size="12" text-anchor="middle">'+d.hits+'</text>';
+    if(n <= 16 || i % Math.ceil(n/12) === 0){
+      s += '<text x="'+(x+bw/2).toFixed(1)+'" y="'+(base+17)+'" fill="#8b949e" font-size="11" text-anchor="middle">'+esc(d.label)+'</text>';
+    }
+    pts.push([(x+bw/2).toFixed(1), (base - Math.round(d.sessions/max*maxH))]);
+  });
+  if(pts.length > 1){   // 会话数折线
+    s += '<polyline points="'+pts.map(function(p){ return p[0]+','+p[1]; }).join(' ')+'" fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round"/>';
+    pts.forEach(function(p){ s += '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3" fill="#3fb950"/>'; });
+  }
+  s += '</svg>';
+  s += '<div style="font-size:12px;color:var(--text3);margin-top:4px;"><span style="display:inline-block;width:10px;height:10px;background:linear-gradient(#bc8cff,#58a6ff);border-radius:2px;vertical-align:-1px;"></span> 访问量 &nbsp;&nbsp;<span style="display:inline-block;width:10px;height:10px;background:#3fb950;border-radius:2px;vertical-align:-1px;"></span> 会话数</div>';
+  el.innerHTML = s;
+}
+function renderAnaSources(sources, total){
+  var el = document.getElementById('anaSources');
+  if(!sources || !sources.length){ el.innerHTML='<div class="empty-mini">暂无数据</div>'; return; }
+  var order = ['direct','search','external','internal'];
+  var map = {}; sources.forEach(function(x){ map[x.t] = x.c; });
+  var max = Math.max.apply(null, sources.map(function(x){ return x.c; }).concat([1]));
+  el.innerHTML = order.filter(function(k){ return map[k]; }).map(function(k){
+    var pct = total ? Math.round(map[k]/total*100) : 0;
+    return '<div class="hbar"><span class="hb-label">'+ANA_SRC[k]+'</span>'+
+      '<div class="hb-track"><div class="hb-fill" style="width:'+Math.max(Math.round(map[k]/max*100),4)+'%;background:'+ANA_SRC_COLOR[k]+'"></div></div>'+
+      '<span class="hb-num">'+map[k]+' · '+pct+'%</span></div>';
+  }).join('');
+}
+function renderAnaPages(pages, total){
+  var el = document.getElementById('anaPagesBody');
+  if(!pages || !pages.length){ el.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px;">暂无访问数据</td></tr>'; return; }
+  el.innerHTML = pages.map(function(p){
+    var pct = total ? (p.hits/total*100).toFixed(1) : 0;
+    return '<tr><td style="word-break:break-all;">'+esc(p.path)+'</td><td>'+p.hits+'</td><td>'+(p.sessions||0)+'</td><td>'+pct+'%</td></tr>';
+  }).join('');
+}
+function renderAnaReferrers(refs){
+  var el = document.getElementById('anaReferrers');
+  if(!refs || !refs.length){ el.innerHTML='<div class="empty-mini">暂无外部来源</div>'; return; }
+  var max = refs[0].c || 1;
+  el.innerHTML = refs.map(function(r){
+    var host = r.referrer.replace(/^https?:\/\//,'').split('/')[0];
+    return '<div class="hbar"><span class="hb-label" title="'+esc(r.referrer)+'">'+esc(host)+'</span>'+
+      '<div class="hb-track"><div class="hb-fill" style="width:'+Math.max(Math.round(r.c/max*100),4)+'%;background:#bc8cff"></div></div>'+
+      '<span class="hb-num">'+r.c+'</span></div>';
+  }).join('');
+}
+function renderAnaRecent(recent){
+  var el = document.getElementById('anaRecent');
+  if(!recent || !recent.length){ el.innerHTML='<div class="empty-mini">暂无数据</div>'; return; }
+  el.innerHTML = recent.map(function(r){
+    var icon = r.device === 'mobile' ? '📱' : '💻';
+    return '<div class="ana-recent-item"><span class="t">'+esc((r.ts||'').slice(5,16))+'</span>'+
+      '<span class="p">'+esc(r.path)+'</span>'+
+      '<span class="meta"><span class="t-chip">'+(ANA_SRC[r.referrer_type]||r.referrer_type)+'</span>'+
+      '<span class="t-chip">'+icon+'</span></span></div>';
+  }).join('');
+}
 
 function loadOverview(){
   api('/api/stats').then(function(res){
@@ -1103,7 +1263,57 @@ window.addEventListener('scroll',function(){
   if(window.innerHeight + window.scrollY >= document.body.offsetHeight - 600){ maybeLoadMore(); }
 },{passive:true});
 
+/* ===== 访问统计埋点 ===== */
+var Track = (function(){
+  var SID_KEY='ir_sid', ACT_KEY='ir_act', GAP=30*60*1000, HB=20*1000, MAX_DUR=4*60*60*1000;
+  var pageOpen = Date.now();
+  function sid(){
+    var t = Date.now(), s = localStorage.getItem(SID_KEY) || '';
+    var last = parseInt(localStorage.getItem(ACT_KEY) || '0', 10) || 0;
+    if(!s || t - last > GAP){                       // 超过30分钟无活动 → 新会话
+      s = 'v' + t.toString(36) + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem(SID_KEY, s);
+    }
+    localStorage.setItem(ACT_KEY, String(t));
+    document.cookie = 'ir_sid=' + s + '; path=/; max-age=1800';  // 供后端归属 API 访问
+    return s;
+  }
+  function send(obj, beacon){
+    try{
+      var body = JSON.stringify(obj);
+      if(beacon && navigator.sendBeacon){
+        navigator.sendBeacon('/api/track', new Blob([body], {type:'application/json'}));
+        return;
+      }
+      fetch('/api/track', {method:'POST', headers:{'Content-Type':'application/json'},
+        body:body, keepalive:true}).catch(function(){});
+    }catch(e){}
+  }
+  function pageview(){
+    var ua = navigator.userAgent;
+    send({type:'pageview', path: location.pathname + location.hash,
+          sid: sid(), referrer: document.referrer || '',
+          device: /Mobi|Android|iPhone/i.test(ua) ? 'mobile' : 'pc'});
+  }
+  function duration(beacon){
+    var d = Math.min(Math.round((Date.now() - pageOpen) / 1000), MAX_DUR / 1000);
+    if(d > 0){ send({type:'duration', sid: sid(), duration: d}, beacon); }
+  }
+  return {
+    init: function(){
+      pageview();
+      setInterval(function(){ if(!document.hidden){ duration(false); } }, HB);      // 心跳
+      window.addEventListener('hashchange', function(){ pageOpen = Date.now(); pageview(); });
+      window.addEventListener('pagehide', function(){ duration(true); });           // 离场兜底
+      document.addEventListener('visibilitychange', function(){
+        if(document.visibilityState === 'hidden'){ duration(true); }
+      });
+    }
+  };
+})();
+
 /* ===== 启动 ===== */
+Track.init();
 initRoute();
 initFeedObserver();
 </script>

@@ -22,6 +22,10 @@ BACKUP_DIR = os.environ.get('BACKUP_DIR', '')
 # 后台密码（部署时务必通过环境变量 ADMIN_PASSWORD 覆盖！）
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'luban2026')
 
+# ===== 访问统计 =====
+# 原始访问记录保留天数（超龄自动清理；visit_daily 日聚合表长期保留，体积小）
+VISIT_RETENTION_DAYS = int(os.environ.get('VISIT_RETENTION_DAYS', '90'))
+
 # ===== AI 提炼（OpenAI 兼容接口，默认智谱 GLM-4-Flash 免费） =====
 # 默认智谱：https://open.bigmodel.cn 注册后创建 API Key（glm-4-flash 免费）
 # 换 DeepSeek：AI_API_BASE=https://api.deepseek.com/v1 且 AI_MODEL=deepseek-chat
