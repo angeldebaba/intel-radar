@@ -269,6 +269,10 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
       <option value="4">★★★★ 4+</option>
       <option value="3">★★★ 3+</option>
     </select>
+    <select id="fSort" title="排序方式">
+      <option value="new">最新优先</option>
+      <option value="rel">相关度优先</option>
+    </select>
     <input type="text" id="fKeyword" placeholder="搜索关键词…">
     <button class="filter-clear" onclick="clearFilters()">✕ 清空</button>
   </div>
@@ -536,8 +540,9 @@ function loadFilters(){
   });
 }
 function clearFilters(){
-  state.vendor=state.industry=state.tag=state.rel=''; state.keyword='';
+  state.vendor=state.industry=state.tag=state.rel=''; state.keyword=''; state.sort='new';
   ['fVendor','fIndustry','fTag','fRel','fKeyword'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('fSort').value='new';
   loadIntelligence(); loadFilters();
 }
 
@@ -1087,6 +1092,7 @@ document.getElementById('fVendor').addEventListener('change',function(){ state.v
 document.getElementById('fIndustry').addEventListener('change',function(){ state.industry=this.value; loadIntelligence(); });
 document.getElementById('fTag').addEventListener('change',function(){ state.tag=this.value; loadIntelligence(); });
 document.getElementById('fRel').addEventListener('change',function(){ state.rel=this.value; loadIntelligence(); });
+document.getElementById('fSort').addEventListener('change',function(){ state.sort=this.value; loadIntelligence(); });
 var kwTimer;
 document.getElementById('fKeyword').addEventListener('input',function(){
   clearTimeout(kwTimer); var me=this;
