@@ -164,9 +164,10 @@ def api_intelligence():
         page_size = 10
 
     where_sql = ' AND '.join(where)
+    where_clause = ('WHERE ' + where_sql) if where_sql else ''
     rows = database.query(
-        'SELECT * FROM intelligence WHERE {} ORDER BY {} LIMIT {}'.format(
-            where_sql, order_sql, page_size + 1), tuple(args))
+        'SELECT * FROM intelligence {} ORDER BY {} LIMIT {}'.format(
+            where_clause, order_sql, page_size + 1), tuple(args))
     has_more = len(rows) > page_size
     rows = rows[:page_size]
     next_cursor = ''
@@ -193,7 +194,7 @@ def api_intelligence():
     total = 0
     if not cursor:
         total = database.query_one(
-            'SELECT COUNT(*) AS c FROM intelligence WHERE ' + where_sql,
+            'SELECT COUNT(*) AS c FROM intelligence ' + where_clause,
             tuple(args))['c']
     return jsonify({'ok': True, 'data': rows, 'total': total,
                     'next_cursor': next_cursor, 'has_more': has_more})
