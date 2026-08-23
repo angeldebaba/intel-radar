@@ -109,7 +109,7 @@ def _extract_og_image(html_text, base_url=''):
         if any(n in low for n in _IMG_NOISE) or any(p in low for p in _IMG_PATH_NOISE):
             continue
         return u
-    # 兜底：取正文首张干净图（跳过 logo/图标/皮肤目录），同注册域优先
+    # 兜底：取正文首张干净图（跳过 logo/图标/皮肤目录/头像），同注册域优先
     page_d = _reg_domain(urlparse(base_url).netloc) if base_url else ''
     same_d, first = '', ''
     for m in re.finditer(r'<img[^>]+src=["\'](https?://[^"\']+\.(?:jpg|jpeg|png|webp))["\']', html_text, re.I):
@@ -117,6 +117,22 @@ def _extract_og_image(html_text, base_url=''):
         low = u.lower()
         if any(n in low for n in _IMG_NOISE) or any(p in low for p in _IMG_PATH_NOISE):
             continue
+        # class 属性命中头像类（2026-08-23 扩充）
+        mc = re.search(r'class=["\']([^"\']+)["\']', m.group(0), re.I)
+        if mc and any(c in mc.group(1).lower() for c in
+                      ('avatar', 'user-img', 'userimg', 'userhead', 'user-pic',
+                       'author-img', 'face', 'portrait')):
+            continue
+        # 边长 ≤400 且近似正方形：头像/缩略图（2026-08-23 扩充）
+        mw = re.search(r'width=["\']?(\d+)', m.group(0), re.I)
+        mh = re.search(r'height=["\']?(\d+)', m.group(0), re.I)
+        if mw and mh:
+            try:
+                w, h = int(mw.group(1)), int(mh.group(1))
+                if max(w, h) <= 400 and 0.8 <= w / h <= 1.25:
+                    continue
+            except (ValueError, ZeroDivisionError):
+                pass
         if not first:
             first = u
         if page_d and _reg_domain(urlparse(u).netloc) == page_d:
@@ -146,14 +162,19 @@ def _enrich_article_image(item, timeout=6):
 # ==================== 原文媒体提取（图片/视频嵌入卡片） ====================
 
 # 图片噪音特征：logo/图标/头像/表情/二维码/精灵图等
+# 2026-08-23 扩充：增加 CSDN/通用博客的用户头像路径/类名特征
 _IMG_NOISE = ('logo', 'icon', 'sprite', 'avatar', 'emoji', 'qrcode', 'wechat',
               'share_', 'button', 'banner_ad', 'ad_', 'pixel', 'spacer',
               'loading', 'placeholder', 'blank', 'default', '1x1', 'beacon',
-              'symbol', 'cert', 'scan.', 'badge', 'medal')
+              'symbol', 'cert', 'scan.', 'badge', 'medal',
+              'userpic', 'user_img', 'user-pic', 'face', 'photo', 'portrait',
+              'head_img', 'userhead', 'user-avatar', 'user_avatar', 'csdnavatar',
+              'profile-avatar', 'avatars/', '/avatar/')
 
 # 图片噪音路径（目录级，比文件名更稳）：皮肤/样式/模板/控件目录全是非正文图
 _IMG_PATH_NOISE = ('/skin/', '/css/', '/style/', '/templates/', '/widget/',
-                   '/common/', '/images/logo', '/ads/', '/ad/', '/emoji/')
+                   '/common/', '/images/logo', '/ads/', '/ad/', '/emoji/',
+                   '/avatar/', '/avatars/')
 
 # 常见二级 TLD（注册域需取三段，如 xxx.com.cn）
 _DOUBLE_TLDS = {'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
@@ -327,11 +348,25 @@ def _extract_media(html_text, base_url):
             continue
         if any(p in low for p in _IMG_PATH_NOISE):
             continue
-        # width/height 属性明显过小的跳过（图标/占位）
+        # class 属性命中：用户头像/作者头像/缩略图等（部分站点用 class 区分）
+        mc = re.search(r'class=["\']([^"\']+)["\']', u, re.I)
+        if mc and any(c in mc.group(1).lower() for c in
+                      ('avatar', 'user-img', 'userimg', 'userhead', 'user-pic',
+                       'author-img', 'face', 'portrait')):
+            continue
+        # width/height 属性明显过小的跳过（图标/占位/小型头像）
         mw = re.search(r'width=["\']?(\d+)', u, re.I)
         mh = re.search(r'height=["\']?(\d+)', u, re.I)
-        if (mw and int(mw.group(1)) < 120) or (mh and int(mh.group(1)) < 80):
+        if (mw and int(mw.group(1)) < 150) or (mh and int(mh.group(1)) < 120):
             continue
+        # 正方形小图（≤400 且 宽高比≈1）通常是头像/缩略图，剔除
+        if mw and mh:
+            try:
+                w, h = int(mw.group(1)), int(mh.group(1))
+                if max(w, h) <= 400 and 0.8 <= w / h <= 1.25:
+                    continue
+            except (ValueError, ZeroDivisionError):
+                pass
         imgs.append(src)
     # 去重保序
     seen = set()
