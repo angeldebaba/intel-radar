@@ -1374,7 +1374,7 @@ def collect_once():
     media_enriched = 0  # 已抓媒体的文章页数（限额控制总耗时）
 
     def _add_items(items, vendor_name):
-        nonlocal added
+        nonlocal added, media_enriched
         # 第一步：基础清洗与去重，得到候选列表
         candidates = []
         for it in items:
