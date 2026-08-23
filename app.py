@@ -7,6 +7,8 @@ import json
 import os
 import re
 import threading
+import time
+import uuid
 from datetime import datetime, date
 from functools import wraps
 
@@ -749,20 +751,89 @@ def _reschedule():
         pass
 
 
+def _job_lock_acquire(name, ttl_seconds):
+    """跨实例任务锁（存 config 表，云端共享 PostgreSQL）。
+
+    背景：CloudBase 滚动部署时新老实例可能同时存活，各自的 apscheduler
+    都会触发 job_collect/job_push，导致重复采集/重复推送。
+    本锁以数据库为仲裁：同一时刻只有一个实例能拿到令牌。
+    成功返回 token；锁被其他实例占用返回 None；
+    锁机制本身故障时返回 'fallback'（不因锁故障阻塞任务）。
+    """
+    token = '{}-{}'.format(int(time.time()), uuid.uuid4().hex[:8])
+    key = 'lock:{}'.format(name)
+    try:
+        if database.PG:
+            database.execute(
+                'INSERT INTO config(key,value) VALUES(%s,%s) '
+                'ON CONFLICT(key) DO NOTHING', (key, token))
+        else:
+            database.execute(
+                'INSERT OR IGNORE INTO config(key,value) VALUES(?,?)',
+                (key, token))
+        row = database.query_one(
+            'SELECT value FROM config WHERE key=' + database.PH, (key,))
+        val = (row or {}).get('value', '')
+        if val == token:
+            return token
+        # 锁已存在：判断是否过期（持有者崩溃未释放时允许接管）
+        try:
+            held_ts = int(str(val).split('-')[0])
+        except Exception:
+            held_ts = 0
+        if int(time.time()) - held_ts > ttl_seconds:
+            database.execute(
+                'UPDATE config SET value=' + database.PH +
+                ' WHERE key=' + database.PH, (token, key))
+            row = database.query_one(
+                'SELECT value FROM config WHERE key=' + database.PH, (key,))
+            if (row or {}).get('value', '') == token:
+                return token
+        return None
+    except Exception:
+        return 'fallback'
+
+
+def _job_lock_release(name, token):
+    if not token or token == 'fallback':
+        return
+    try:
+        database.execute(
+            'DELETE FROM config WHERE key=' + database.PH +
+            ' AND value=' + database.PH,
+            ('lock:{}'.format(name), token))
+    except Exception:
+        pass
+
+
 def job_collect():
+    token = _job_lock_acquire('daily_collect', ttl_seconds=3600)
+    if token is None:
+        database.log('system', '检测到另一实例正在执行采集，本轮跳过（防重跑锁）')
+        print('[{}] 采集被防重跑锁拦截'.format(database.now_str()))
+        return
     try:
         added = collector.collect_once()
         print('[{}] 每日采集完成，新增 {} 条'.format(database.now_str(), added))
     except Exception as e:
         print('[{}] 采集失败: {}'.format(database.now_str(), e))
+    finally:
+        _job_lock_release('daily_collect', token)
 
 
 def job_push():
+    token = _job_lock_acquire('daily_push', ttl_seconds=600)
+    if token is None:
+        database.log('system', '检测到另一实例正在推送，本轮跳过（防重跑锁）')
+        print('[{}] 推送被防重跑锁拦截'.format(database.now_str()))
+        return
     try:
         ok, msg = pusher.push_daily_top()
         print('[{}] 每日推送: {}'.format(database.now_str(), msg))
     except Exception as e:
         print('[{}] 推送失败: {}'.format(database.now_str(), e))
+    finally:
+        _job_lock_release('daily_push', token)
 
 
 if not scheduler.running:
