@@ -781,6 +781,8 @@ def admin_reprocess():
         return jsonify({'ok': False, 'error': '数据整理正在进行中'})
     if collector.PROGRESS['running']:
         return jsonify({'ok': False, 'error': '采集正在进行中，请等采集结束后再整理'})
+    if MEDIA_RESCAN['running']:
+        return jsonify({'ok': False, 'error': '媒体重抓正在进行中，请等重抓结束后再整理'})
     t = threading.Thread(target=_run_reprocess, daemon=True)
     t.start()
     return jsonify({'ok': True, 'msg': '数据整理已启动'})
@@ -796,6 +798,92 @@ def admin_reprocess_status():
     last = database.query_one(
         "SELECT detail, created_at FROM collect_log "
         "WHERE action='collect' AND detail LIKE '数据整理完成%' "
+        "ORDER BY id DESC LIMIT 1")
+    if last:
+        data['last_finished'] = {
+            'detail': last['detail'],
+            'ts': last['created_at'],
+        }
+    return jsonify({'ok': True, 'data': data})
+
+
+# -------- 强制重抓媒体（全量 media 重刷） --------
+MEDIA_RESCAN = {'running': False, 'total': 0, 'done': 0, 'updated': 0,
+                'kept': 0, 'failed': 0, 'finished_at': '', 'log': []}
+
+
+@app.route('/api/admin/media-rescan', methods=['POST'])
+@require_admin
+def admin_media_rescan():
+    """启动强制重抓媒体（后台线程）：对所有带链接条目重新提取图片/视频。
+
+    与「数据整理」第三步的区别：数据整理只回填 media 为空的条目；
+    本功能全量重刷（含已有 media 的），用于媒体提取逻辑升级后重刷存量数据。
+    新提取有内容则替换旧 media；提取为空则保留旧值（防瞬时失败误删好数据）。
+    """
+    if MEDIA_RESCAN['running']:
+        return jsonify({'ok': False, 'error': '媒体重抓正在进行中'})
+    if collector.PROGRESS['running']:
+        return jsonify({'ok': False, 'error': '采集正在进行中，请等采集结束后再重抓'})
+    if REPROCESS['running']:
+        return jsonify({'ok': False, 'error': '数据整理正在进行中，请等整理结束后再重抓'})
+    t = threading.Thread(target=_run_media_rescan, daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'msg': '媒体重抓已启动'})
+
+
+def _run_media_rescan():
+    """后台线程：全量重抓媒体（图片/视频/缩略图），进度写 MEDIA_RESCAN。"""
+    st = MEDIA_RESCAN
+    st.update(running=True, total=0, done=0, updated=0, kept=0,
+              failed=0, finished_at='', log=[])
+    try:
+        rows = database.query(
+            "SELECT id, url, image FROM intelligence "
+            "WHERE url LIKE 'http%' ORDER BY id DESC LIMIT 200")
+        st['total'] = len(rows)
+        st['log'].append('全量媒体重抓: 待处理 {} 条'.format(len(rows)))
+        for r in rows:
+            it = {'url': r['url'], 'image': r['image'] or ''}
+            collector._enrich_article_media(it)
+            new_media = it.get('media') or {}
+            has_new = bool(new_media.get('images') or new_media.get('videos'))
+            if has_new:
+                # 新提取有内容：替换旧 media（重刷的意义所在——应用最新提取/过滤逻辑）
+                database.execute(
+                    'UPDATE intelligence SET image=?, media=? WHERE id=?',
+                    (it.get('image') or r['image'] or '',
+                     json.dumps(new_media, ensure_ascii=False), r['id']))
+                st['updated'] += 1
+            elif it.get('image') and it.get('image') != (r['image'] or ''):
+                # 只补到缩略图没抓到正文媒体：仅更新 image，不动旧 media
+                database.execute('UPDATE intelligence SET image=? WHERE id=?',
+                                 (it['image'], r['id']))
+                st['kept'] += 1
+            else:
+                # 提取为空（反爬/源站异常）：保留旧值防误删
+                st['kept'] += 1
+            st['done'] += 1
+        database.log('collect', '媒体重抓完成: 更新{}条 保留{}条'.format(
+            st['updated'], st['kept']))
+        st['log'].append('完成：更新 {} 条，保留 {} 条'.format(
+            st['updated'], st['kept']))
+    except Exception as e:
+        st['log'].append('出错: {}'.format(e))
+        database.log('collect', '媒体重抓异常: {}'.format(e), 'warn')
+    finally:
+        st['running'] = False
+        st['finished_at'] = database.now_str()
+
+
+@app.route('/api/admin/media-rescan-status')
+@require_admin
+def admin_media_rescan_status():
+    """前端轮询：媒体重抓进度 + 数据库日志里的上次完成记录（权威源）"""
+    data = dict(MEDIA_RESCAN)
+    last = database.query_one(
+        "SELECT detail, created_at FROM collect_log "
+        "WHERE action='collect' AND detail LIKE '媒体重抓完成%' "
         "ORDER BY id DESC LIMIT 1")
     if last:
         data['last_finished'] = {

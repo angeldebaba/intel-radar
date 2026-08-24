@@ -409,6 +409,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
         <div class="row-flex">
           <button class="btn btn-orange" onclick="manualCollect()" id="btnCollect">🔍 立即采集</button>
           <button class="btn" onclick="runReprocess()" id="btnReprocess" title="清理超龄旧文(>30天)/无正文/低分条目；存量短摘要重跑AI速览">🧹 数据整理</button>
+          <button class="btn" onclick="runMediaRescan()" id="btnMediaRescan" title="全量重抓所有条目的图片/视频（含已有媒体的），应用最新提取逻辑；抓不到的保留原值">🎬 重抓媒体</button>
           <button class="btn" onclick="manualPush()" id="btnPush">📤 推送今日Top3</button>
           <button class="btn btn-green" onclick="testPush()" id="btnTest">🧪 测试推送</button>
           <button class="btn" onclick="runDiagnose()" id="btnDiag" title="检测百度/必应/搜狗在云端是否返回结果">🔧 诊断采集</button>
@@ -1190,6 +1191,45 @@ function testPush(){
   api('/api/admin/push-test',{method:'POST'}).then(function(res){
     b.disabled=false; b.textContent='🧪 测试推送';
     document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">✅ '+res.msg+'</span>' : '<span class="msg err">'+res.msg+'</span>';
+  });
+}
+var _mediaRescanTimer=null;
+function runMediaRescan(){
+  var b=document.getElementById('btnMediaRescan');
+  if(!window.confirm('将对全部条目重新抓取原文页提取图片/视频（含已带媒体的条目，应用最新提取与噪音过滤逻辑；抓不到的保留原值）。预计1-3分钟。继续？')) return;
+  b.disabled=true; b.textContent='重抓中…';
+  document.getElementById('opMsg').innerHTML='<span class="msg">媒体重抓已启动，正在逐条抓取原文页提取图片/视频…</span>';
+  api('/api/admin/media-rescan',{method:'POST'}).then(function(res){
+    if(!res.ok){
+      b.disabled=false; b.textContent='🎬 重抓媒体';
+      document.getElementById('opMsg').innerHTML='<span class="msg err">'+(res.error||res.msg||'启动失败')+'</span>';
+      return;
+    }
+    if(_mediaRescanTimer) clearInterval(_mediaRescanTimer);
+    _mediaRescanTimer=setInterval(function(){
+      api('/api/admin/media-rescan-status').then(function(r){
+        if(!r.ok) return;
+        var p=r.data;
+        if(p.running){
+          var pct = p.total? Math.round(p.done/p.total*100):0;
+          document.getElementById('opMsg').innerHTML='<span class="msg">重抓进度 '+pct+'%（'+p.done+'/'+p.total+'）· 更新 '+p.updated+' 条 · 保留 '+p.kept+' 条 …</span>';
+        }else{
+          clearInterval(_mediaRescanTimer); _mediaRescanTimer=null;
+          b.disabled=false; b.textContent='🎬 重抓媒体';
+          var html;
+          if(p.last_finished){
+            html='<span class="msg ok">✅ '+p.last_finished.detail+'</span>';
+          }else{
+            html='<span class="msg ok">✅ 媒体重抓完成：更新 '+p.updated+' 条，保留 '+p.kept+' 条</span>';
+          }
+          document.getElementById('opMsg').innerHTML=html;
+          loadAll(); loadOverview(); loadLogs();
+        }
+      }).catch(function(){});
+    }, 3000);
+  }).catch(function(){
+    b.disabled=false; b.textContent='🎬 重抓媒体';
+    document.getElementById('opMsg').innerHTML='<span class="msg err">启动失败，请检查网络后重试</span>';
   });
 }
 function runDiagnose(){
