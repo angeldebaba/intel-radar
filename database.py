@@ -115,7 +115,9 @@ def init_db():
             session_id TEXT DEFAULT '',
             referrer TEXT DEFAULT '',
             referrer_type TEXT DEFAULT 'direct',
-            device TEXT DEFAULT 'pc'
+            device TEXT DEFAULT 'pc',
+            ip_addr TEXT DEFAULT '',
+            region TEXT DEFAULT ''
         )''' % {'id': id_def},
         '''CREATE TABLE IF NOT EXISTS visit_session (
             session_id TEXT PRIMARY KEY,
@@ -161,6 +163,21 @@ def init_db():
                 cur.execute("ALTER TABLE intelligence ADD COLUMN media TEXT DEFAULT ''")
     except Exception as e:
         database_log = None  # 迁移失败不应阻塞启动
+
+    # 兼容老库：补充 visit_log 的 ip_addr / region 字段
+    try:
+        if PG:
+            cur.execute("ALTER TABLE visit_log ADD COLUMN IF NOT EXISTS ip_addr TEXT DEFAULT ''")
+            cur.execute("ALTER TABLE visit_log ADD COLUMN IF NOT EXISTS region TEXT DEFAULT ''")
+        else:
+            cur.execute("PRAGMA table_info(visit_log)")
+            vcols = [r[1] for r in cur.fetchall()]
+            if 'ip_addr' not in vcols:
+                cur.execute("ALTER TABLE visit_log ADD COLUMN ip_addr TEXT DEFAULT ''")
+            if 'region' not in vcols:
+                cur.execute("ALTER TABLE visit_log ADD COLUMN region TEXT DEFAULT ''")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -304,12 +321,14 @@ def record_visit_batch(records):
             d = ts[:10] or today_str()
             path = str(r.get('path', '/') or '/')[:190]
             sid = str(r.get('sid', '') or '')[:64]
-            cur.execute('INSERT INTO visit_log(ts,date,path,session_id,referrer,referrer_type,device) '
-                        'VALUES (' + ','.join([PH] * 7) + ')',
+            cur.execute('INSERT INTO visit_log(ts,date,path,session_id,referrer,referrer_type,device,ip_addr,region) '
+                        'VALUES (' + ','.join([PH] * 9) + ')',
                         (ts, d, path, sid,
                          str(r.get('referrer', ''))[:380],
                          str(r.get('rtype', 'direct'))[:16],
-                         str(r.get('device', 'pc'))[:8]))
+                         str(r.get('device', 'pc'))[:8],
+                         str(r.get('ip', ''))[:45],
+                         str(r.get('region', ''))[:64]))
             cur.execute('INSERT INTO visit_daily(date,path,hits,sessions) VALUES (' + PH + ',' + PH + ',1,0) '
                         'ON CONFLICT(date,path) DO UPDATE SET hits=visit_daily.hits+1', (d, path))
         # 2) 会话：先查出已存在的，新的插入（并计入 sessions 聚合），旧的仅更新 last_ts
@@ -379,10 +398,22 @@ def analytics_query(days):
         'sess': query_one('SELECT COUNT(*) AS c, COALESCE(AVG(duration_sec),0) AS avg_d, '
                           'COALESCE(MAX(duration_sec),0) AS max_d FROM visit_session WHERE date>=' + PH,
                           (start,)) or {'c': 0, 'avg_d': 0, 'max_d': 0},
-        'recent': query('SELECT ts, path, referrer_type, device, session_id FROM visit_log '
+        'recent': query('SELECT ts, path, referrer_type, device, session_id, ip_addr, region FROM visit_log '
                         'WHERE date>=' + PH + ' ORDER BY id DESC LIMIT 20', (start,)),
     }
     return data
+
+
+def visit_detail_query(page=1, page_size=50, days=30):
+    """访问明细分页查询（按时间倒序，含 IP / 地区）"""
+    from datetime import timedelta
+    start = (datetime.now() - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    offset = (page - 1) * page_size
+    total = query_one('SELECT COUNT(*) AS c FROM visit_log WHERE date>=' + PH, (start,)) or {'c': 0}
+    items = query('SELECT ts, date, path, session_id, referrer, referrer_type, device, ip_addr, region '
+                  'FROM visit_log WHERE date>=' + PH + ' ORDER BY id DESC LIMIT ' + str(int(page_size)) +
+                  ' OFFSET ' + str(int(offset)), (start,))
+    return {'total': total['c'] or 0, 'items': items, 'page': page, 'page_size': page_size, 'days': days}
 
 
 def purge_visit_log(keep_days=90):

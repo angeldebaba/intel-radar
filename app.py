@@ -78,6 +78,80 @@ def _classify_referrer(ref, host=''):
     return 'external'
 
 
+def _get_client_ip():
+    """从请求头提取客户端真实 IP（CloudBase / CDN 场景 XFF 多跳取首个公网 IP）"""
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        for ip in xff.split(','):
+            ip = ip.strip()
+            if ip and not ip.startswith(('10.', '172.16.', '172.17.', '172.18.',
+                                         '172.19.', '172.20.', '172.21.', '172.22.',
+                                         '172.23.', '172.24.', '172.25.', '172.26.',
+                                         '172.27.', '172.28.', '172.29.', '172.30.',
+                                         '172.31.', '192.168.', '127.')):
+                return ip[:45]
+        return xff.split(',')[0].strip()[:45]
+    rip = (request.remote_addr or '')[:45]
+    return rip
+
+
+_IP_REGION_CACHE = {}          # ip -> '中国 广东 深圳'  （内存缓存，进程级）
+_IP_CACHE_LOCK = threading.Lock()
+
+
+def _is_private_ip(ip):
+    return (not ip or ip.startswith(('10.', '172.16.', '172.17.', '172.18.', '172.19.',
+        '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.',
+        '172.27.', '172.28.', '172.29.', '172.30.', '172.31.', '192.168.', '127.')))
+
+
+def _ip_region_batch(ips):
+    """批量查询 IP 归属地（ip-api.com batch API，每批最多 100 条，带内存缓存）
+    返回 dict: {ip: '中国 广东 深圳'  或 '' 查询失败}
+    """
+    result = {}
+    pending = []
+    with _IP_CACHE_LOCK:
+        for ip in ips:
+            if not ip or _is_private_ip(ip):
+                result[ip] = '本地内网'
+                continue
+            if ip in _IP_REGION_CACHE:
+                result[ip] = _IP_REGION_CACHE[ip]
+            elif ip not in pending:
+                pending.append(ip)
+    # 批量查询 pending 中未缓存的 IP
+    while pending:
+        batch = pending[:100]
+        pending = pending[100:]
+        try:
+            import urllib.request
+            body = json.dumps(batch).encode()
+            req = urllib.request.Request(
+                'http://ip-api.com/batch?fields=status,country,regionName,city,query&lang=zh-CN',
+                data=body, headers={'Content-Type': 'application/json'}, method='POST')
+            with urllib.request.urlopen(req, timeout=5) as r:
+                arr = json.loads(r.read().decode())
+            for item in arr:
+                ip = (item.get('query') or '').strip()
+                if item.get('status') == 'success':
+                    parts = [item.get('country', ''), item.get('regionName', ''),
+                             item.get('city', '')]
+                    region = ' '.join(p for p in parts if p)
+                else:
+                    region = ''
+                result[ip] = region
+                with _IP_CACHE_LOCK:
+                    _IP_REGION_CACHE[ip] = region
+        except Exception:
+            for ip in batch:
+                result[ip] = result.get(ip, '')
+                with _IP_CACHE_LOCK:
+                    if ip not in _IP_REGION_CACHE:
+                        _IP_REGION_CACHE[ip] = ''
+    return result
+
+
 def _track_enqueue(rec):
     """入队（请求线程调用，必须无阻塞）"""
     with _VISIT_LOCK:
@@ -96,6 +170,14 @@ def _visit_flush_loop():
             batch, _VISIT_QUEUE = _VISIT_QUEUE, []
         try:
             if batch:
+                # 落库前批量富化 IP 归属地（仅在 hit 记录有 IP 且缺 region 时）
+                hit_ips = {r.get('ip', '') for r in batch
+                           if r.get('kind') == 'hit' and r.get('ip') and not r.get('region')}
+                if hit_ips:
+                    regions = _ip_region_batch(list(hit_ips))
+                    for r in batch:
+                        if r.get('kind') == 'hit' and r.get('ip') and not r.get('region'):
+                            r['region'] = regions.get(r['ip'], '')
                 database.record_visit_batch(batch)
         except Exception as e:
             # 落库失败不影响业务；丢本批避免阻塞（原始数据本就是统计用途）
@@ -130,6 +212,7 @@ def _track_api_hits():
                 'referrer': ref[:380],
                 'rtype': _classify_referrer(ref, urlparse(request.host_url).netloc),
                 'device': 'mobile' if re.search(r'Mobi|Android|iPhone', ua, re.I) else 'pc',
+                'ip': _get_client_ip(),
             })
     except Exception:
         pass
@@ -162,6 +245,7 @@ def api_track():
         'referrer': ref,
         'rtype': _classify_referrer(ref, urlparse(request.host_url).netloc),
         'device': 'mobile' if data.get('device') == 'mobile' else 'pc',
+        'ip': _get_client_ip(),
     })
     return jsonify({'ok': True})
 
@@ -216,6 +300,26 @@ def api_admin_analytics():
         'pages': d['pages'], 'sources': d['sources'],
         'referrers': d['referrers'], 'recent': d['recent'],
     }})
+
+
+@app.route('/api/admin/visit-detail')
+@require_admin
+def api_admin_visit_detail():
+    """访问明细分页列表：page / page_size / days 参数"""
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = min(200, max(10, int(request.args.get('page_size', 50))))
+    except (TypeError, ValueError):
+        page_size = 50
+    try:
+        days = min(365, max(1, int(request.args.get('days', 30))))
+    except (TypeError, ValueError):
+        days = 30
+    d = database.visit_detail_query(page=page, page_size=page_size, days=days)
+    return jsonify({'ok': True, 'data': d})
 
 
 # ==================== 页面 ====================

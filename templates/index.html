@@ -480,8 +480,25 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
       </div>
     </div>
     <div class="panel">
-      <h3>🕐 最近访问 <span class="hint">最近 20 条</span></h3>
-      <div id="anaRecent"><div class="empty-mini">暂无数据</div></div>
+      <h3>📋 访问明细 <span class="hint" id="vdHint">最近 30 天</span></h3>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <label style="font-size:13px;color:var(--text3);">范围</label>
+        <select id="vdDays" onchange="vdPage=1;loadVisitDetail()" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;">
+          <option value="7">近 7 天</option>
+          <option value="30" selected>近 30 天</option>
+          <option value="90">近 90 天</option>
+          <option value="365">近 1 年</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="vdPage=1;loadVisitDetail()">刷新</button>
+        <span style="margin-left:auto;font-size:12px;color:var(--text3);" id="vdTotal"></span>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl" id="vdTable">
+          <thead><tr><th>时间</th><th>IP</th><th>地区</th><th>路径</th><th>来源</th><th>设备</th></tr></thead>
+          <tbody id="vdBody"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">暂无数据</td></tr></tbody>
+        </table>
+      </div>
+      <div id="vdPager" style="display:flex;align-items:center;gap:8px;justify-content:center;margin-top:10px;"></div>
     </div>
   </div>
 
@@ -856,7 +873,7 @@ function switchTab(tab){
   if(tab==='dahua') loadDahuaList();
   if(tab==='analysis') loadAnalysis();
   if(tab==='settings') loadSettings();
-  if(tab==='analytics') loadAnalytics();
+  if(tab==='analytics'){ loadAnalytics(); loadVisitDetail(); }
   if(tab==='logs') loadLogs();
 }
 function loadAdminPanel(){ switchTab('overview'); }
@@ -892,7 +909,6 @@ function loadAnalytics(){
     renderAnaSources(d.sources, s.hits);
     renderAnaPages(d.pages, s.hits);
     renderAnaReferrers(d.referrers);
-    renderAnaRecent(d.recent);
   });
 }
 function renderAnaTrend(trend){
@@ -965,6 +981,54 @@ function renderAnaRecent(recent){
       '<span class="meta"><span class="t-chip">'+(ANA_SRC[r.referrer_type]||r.referrer_type)+'</span>'+
       '<span class="t-chip">'+icon+'</span></span></div>';
   }).join('');
+}
+
+/* ===== 访问明细 ===== */
+var vdPage = 1, vdPageSize = 50;
+function loadVisitDetail(){
+  var days = document.getElementById('vdDays') ? document.getElementById('vdDays').value : 30;
+  var url = '/api/admin/visit-detail?page=' + vdPage + '&page_size=' + vdPageSize + '&days=' + days;
+  api(url).then(function(res){
+    var tbody = document.getElementById('vdBody');
+    var totalEl = document.getElementById('vdTotal');
+    var pager = document.getElementById('vdPager');
+    var hint = document.getElementById('vdHint');
+    if(hint) hint.textContent = '近 ' + days + ' 天';
+    if(!res.ok || !res.data){
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">'+(res.error||'加载失败')+'</td></tr>';
+      totalEl.textContent = ''; pager.innerHTML = ''; return;
+    }
+    var d = res.data;
+    totalEl.textContent = '共 ' + d.total + ' 条记录';
+    if(!d.items || !d.items.length){
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">暂无数据</td></tr>';
+      pager.innerHTML = ''; return;
+    }
+    tbody.innerHTML = d.items.map(function(r){
+      var icon = r.device === 'mobile' ? '📱 手机' : '💻 PC';
+      var ip = r.ip_addr || '—';
+      var region = r.region || '—';
+      var src = ANA_SRC[r.referrer_type] || r.referrer_type || '—';
+      var path = r.path || '/';
+      var ts = (r.ts || '').slice(5, 19);
+      return '<tr><td style="white-space:nowrap;">'+esc(ts)+'</td>'+
+        '<td style="font-family:monospace;font-size:12px;">'+esc(ip)+'</td>'+
+        '<td>'+esc(region)+'</td>'+
+        '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(path)+'">'+esc(path)+'</td>'+
+        '<td>'+esc(src)+'</td>'+
+        '<td style="white-space:nowrap;">'+icon+'</td></tr>';
+    }).join('');
+    // 分页器
+    var totalPages = Math.ceil(d.total / d.pageSize);
+    if(totalPages <= 1){ pager.innerHTML = ''; return; }
+    var btns = '';
+    btns += '<button class="btn btn-ghost btn-sm" '+(vdPage<=1?'disabled':'')+' onclick="vdPage=1;loadVisitDetail()">«</button>';
+    btns += '<button class="btn btn-ghost btn-sm" '+(vdPage<=1?'disabled':'')+' onclick="vdPage--;loadVisitDetail()">‹</button>';
+    btns += '<span style="font-size:13px;color:var(--text3);">'+vdPage+' / '+totalPages+'</span>';
+    btns += '<button class="btn btn-ghost btn-sm" '+(vdPage>=totalPages?'disabled':'')+' onclick="vdPage++;loadVisitDetail()">›</button>';
+    btns += '<button class="btn btn-ghost btn-sm" '+(vdPage>=totalPages?'disabled':'')+' onclick="vdPage='+totalPages+';loadVisitDetail()">»</button>';
+    pager.innerHTML = btns;
+  });
 }
 
 function loadOverview(){
