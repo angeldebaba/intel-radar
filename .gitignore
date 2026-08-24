@@ -28,3 +28,6 @@ push_auto_daily.html
 .idea/
 .vscode/
 .DS_Store
+
+# WorkBuddy 工作空间元数据
+.workbuddy/
