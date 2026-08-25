@@ -27,11 +27,15 @@ SYSTEM_PROMPT = (
     '凑热点的营销软文等）→ keep=false, score 0-1\n'
     '   - 泛安防/物联网内容但与孪生可视化沾边 → score 2\n'
     '   - 明确涉及孪生/三维可视化产品、方案、案例、政策 → score 3-5\n'
-    '2. 为每条写一段 120~200 个汉字的「情报速览」，让读者不用点开原文就能了解全貌。'
-    '结构：①核心事件（谁发布/建成了什么，何时何地）；②关键细节（规模、数字、'
-    '技术亮点、合作伙伴、应用场景）；③行业意义（对数字孪生/视频融合赛道意味着什么，一句话）。'
-    '只依据标题与摘要中真实存在的信息，禁止编造数字和事实；信息不足时可基于标题合理概述，'
-    '原文信息极少时也要写足 120 字的行业背景解读。\n'
+    '2. 为每条写一段「情报速览」。硬性长度要求：每条 summary 必须 120~200 个汉字，'
+    '低于 120 字视为不合格输出，会被系统拒收重新生成。\n'
+    '严格按三段结构撰写，每段都要写足：\n'
+    '① 核心事件（≥40字）：谁在何时何地发布/建成了什么；\n'
+    '② 关键细节（≥40字）：规模、数字、技术亮点、合作伙伴、应用场景等具体信息；\n'
+    '③ 行业意义（≥30字）：对数字孪生/视频融合赛道意味着什么。\n'
+    '只依据标题与摘要中真实存在的信息，禁止编造数字和事实；'
+    '当原文信息极少、不足120字时，必须围绕该主题补充行业背景解读（如技术应用趋势、'
+    '典型场景价值、赛道竞争格局）写足120字，禁止直接缩短。\n'
     '严格输出 JSON 数组（不要 markdown 代码块），每项格式：\n'
     '{"id": 编号, "keep": true/false, "score": 0-5, '
     '"summary": "情报速览（120~200字）", "tags": ["最多3个，从 技术/方案/政策/竞品/案例/展会 中选"]}\n'
@@ -69,6 +73,46 @@ def _extract_json(text):
     if s < 0 or e <= s:
         raise ValueError('输出中未找到 JSON 数组')
     return json.loads(text[s:e + 1])
+
+
+def _repair_short(items, results):
+    """对摘要不足 100 字的条目做一轮补写重试（用户硬性要求：卡片内容优先体现原文核心，不短于 120 字）。
+    返回修复后的 results；失败时原样返回。"""
+    short_idx = [i for i, r in enumerate(results)
+                 if r is not None and len((r.get('summary') or '').strip()) < 100]
+    if not short_idx:
+        return results
+    payload = [{'id': k,
+                'title': (items[k].get('title') or '')[:120],
+                'draft': (results[k].get('summary') or '')[:400]}
+               for k in short_idx]
+    repair_prompt = (
+        '下面这几条情报速览不合格：长度不足 120 个汉字。'
+        '请逐条重写，硬性要求：每条 120~200 个汉字，'
+        '在 draft 基础上扩写行业背景与应用价值（技术应用趋势、典型场景、赛道意义），'
+        '禁止编造具体数字和事实。严格输出 JSON 数组（不要 markdown 代码块），每项格式：\n'
+        '{"id": 编号, "summary": "重写后的120~200字速览"}'
+    )
+    try:
+        raw = _chat([
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)},
+            {'role': 'assistant', 'content': repair_prompt},
+            {'role': 'user', 'content': '请按上述要求重写这些条目。'},
+        ])
+        arr = _extract_json(raw)
+        for obj in arr:
+            try:
+                idx = int(obj.get('id'))
+            except (TypeError, ValueError):
+                continue
+            if idx in short_idx:
+                new_sum = str(obj.get('summary') or '').strip()
+                if len(new_sum) > len((results[idx].get('summary') or '').strip()):
+                    results[idx]['summary'] = new_sum[:400]
+    except Exception:
+        pass
+    return results
 
 
 def analyze_batch(items):
@@ -113,6 +157,7 @@ def analyze_batch(items):
                     'tags': [str(t)[:10] for t in (obj.get('tags') or [])][:3],
                 }
             if all(r is not None for r in results):
+                results = _repair_short(items, results)
                 return results
             # 有缺失项：缺失的用哨兵值标记（score=-1 表示无 AI 结果，调用方回退关键词逻辑）
             return [r if r is not None else {'keep': True, 'score': -1, 'summary': '',
