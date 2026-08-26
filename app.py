@@ -1191,6 +1191,7 @@ def admin_quarantine_scan():
     cut = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
     rows = database.query('SELECT * FROM intelligence WHERE date>=?', (cut,))
     moved = []
+    cleaned = 0
     for r in rows:
         arch = database.get_archive(r['id'])
         metrics = None
@@ -1201,6 +1202,13 @@ def admin_quarantine_scan():
             url=r.get('url'), title=r.get('title'),
             snippet=snippet, metrics=metrics)
         if not reason:
+            # 留存条目顺手回填清洗：剥离摘要/描述里搜索引擎截断的残缺 URL
+            new_sum = collector._strip_truncated_urls(r.get('summary') or '')
+            new_desc = collector._strip_truncated_urls(r.get('description') or '')
+            if new_sum != (r.get('summary') or '') or new_desc != (r.get('description') or ''):
+                database.execute('UPDATE intelligence SET summary=?, description=? WHERE id=?',
+                                 (new_sum, new_desc, r['id']))
+                cleaned += 1
             continue
         moved.append({'id': r['id'], 'title': r['title'], 'url': r.get('url'),
                       'reason': reason, 'note': note,
@@ -1213,11 +1221,12 @@ def admin_quarantine_scan():
             database.delete_intelligence(r['id'])
         else:
             moved[-1]['note'] += '（隔离区写入失败：标题/URL 已存在，仅保留情报）'
-    if not dry_run and moved:
-        database.log('collect', '存量质量扫描: 隔离 {} 条（近{}天）'.format(len(moved), days), 'ok')
+    if not dry_run and (moved or cleaned):
+        database.log('collect', '存量质量扫描: 隔离 {} 条 / 清洗描述 {} 条（近{}天）'.format(
+            len(moved), cleaned, days), 'ok')
         database.backup_db(force=True)
     return jsonify({'ok': True, 'scanned': len(rows), 'quarantined': len(moved),
-                    'dry_run': dry_run, 'data': moved})
+                    'cleaned': cleaned, 'dry_run': dry_run, 'data': moved})
 
 
 @app.route('/api/admin/quarantine/promote', methods=['POST'])
