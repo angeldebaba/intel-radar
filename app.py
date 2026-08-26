@@ -14,7 +14,7 @@ from functools import wraps
 from urllib.parse import urlparse
 
 from flask import (Flask, render_template, request, jsonify, session,
-                   send_from_directory)
+                   send_from_directory, redirect)
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -33,13 +33,14 @@ database.init_db()
 
 # 首次启动把默认配置写入数据库
 # 当代码升级（config_version 变化）时，重新同步时间/条数默认值
-CONFIG_VERSION = '2'
+CONFIG_VERSION = '3'
 if database.get_config('config_version') != CONFIG_VERSION:
     database.set_config('config_version', CONFIG_VERSION)
     database.set_config('vendors_configured', '1')
     database.set_config('coll_time', config.COLLECT_TIME)
     database.set_config('push_time', config.PUSH_TIME)
     database.set_config('push_top_n', str(config.PUSH_TOP_N))
+    database.set_config('intel_retention_days', str(config.INTEL_RETENTION_DAYS))
 
 
 # ==================== 鉴权 ====================
@@ -333,6 +334,63 @@ def favicon():
     return '', 204
 
 
+@app.route('/article/<int:iid>')
+def article_view(iid):
+    """原文存档查看页：从本地库渲染存档原文，防链接过期/反爬导致不可回看。
+    无存档时回退跳转原站链接。"""
+    row = database.query_one(
+        'SELECT id, title, source, url, date, published, vendor FROM intelligence WHERE id='
+        + database.PH, (iid,))
+    if not row:
+        return '记录不存在或已过保留期清理', 404
+    arch = database.get_archive(iid)
+    if not arch or not (arch.get('html') or arch.get('plain_text')):
+        if row['url']:
+            return redirect(row['url'])
+        return '暂无原文存档', 404
+
+    base_tag = ''
+    if (arch.get('base_url') or '').startswith('http'):
+        # base 让存档里的相对路径图片/链接按原站解析
+        base_tag = '<base href="{}" target="_blank">'.format(esc(arch['base_url']))
+    body_html = arch.get('html') or ''
+    if not body_html:
+        body_html = '<pre class="plain">{}</pre>'.format(esc(arch.get('plain_text') or ''))
+
+    meta_bits = [esc(row['source'] or '网络'), esc(row['date'])]
+    if row.get('published'):
+        meta_bits.append('发布 ' + esc(row['published']))
+    if row.get('vendor'):
+        meta_bits.insert(0, esc(row['vendor']))
+    orig_link = ('<a class="o" href="{}" target="_blank" rel="noopener">原站链接 ↗</a>'
+                 .format(esc(row['url']))) if row['url'] else ''
+    page = '''<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{base}<title>{title} · 原文存档</title>
+<style>
+body{{margin:0;background:#0d1117;color:#d6dee6;font-family:"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.8;}}
+.wrap{{max-width:800px;margin:0 auto;padding:24px 16px 64px;}}
+.bar{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:10px;margin-bottom:16px;}}
+.bar h1{{font-size:17px;font-weight:600;margin:0;flex:1;min-width:200px;color:#f0f6fc;}}
+.bar .m{{font-size:12px;color:#8b949e;}}
+.bar a{{color:#58a6ff;text-decoration:none;font-size:13px;}}
+.bar a.b{{color:#8b949e;}}
+.arc{{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px 24px;overflow-wrap:break-word;}}
+.arc img,.arc video{{max-width:100%;height:auto;border-radius:6px;}}
+.arc iframe{{max-width:100%;aspect-ratio:16/9;border:0;border-radius:6px;}}
+.arc a{{color:#58a6ff;}}
+.arc pre.plain{{white-space:pre-wrap;font-family:inherit;}}
+.ft{{text-align:center;color:#8b949e;font-size:12px;margin-top:14px;}}
+</style></head><body><div class="wrap">
+<div class="bar"><a class="b" href="/">← 返回雷达</a><h1>{title}</h1>{orig}</div>
+<div class="arc">{body}</div>
+<div class="ft">本地存档 · 采集于 {fetched} · intel-radar</div>
+</div></body></html>'''.format(
+        base=base_tag, title=esc(row['title']), orig=orig_link,
+        body=body_html, fetched=esc((arch.get('fetched_at') or '')[:19]))
+    return page
+
+
 # ==================== 公开 API ====================
 @app.route('/api/stats')
 def api_stats():
@@ -437,8 +495,9 @@ def api_intelligence():
     where_sql = ' AND '.join(where)
     where_clause = ('WHERE ' + where_sql) if where_sql else ''
     rows = database.query(
-        'SELECT * FROM intelligence {} ORDER BY {} LIMIT {}'.format(
-            where_clause, order_sql, page_size + 1), tuple(args))
+        'SELECT i.*, EXISTS(SELECT 1 FROM article_archive a WHERE a.intel_id=i.id) '
+        'AS has_archive FROM intelligence i {} ORDER BY {} LIMIT {}'.format(
+            where_clause, order_sql.replace(', ', ', i.'), page_size + 1), tuple(args))
     has_more = len(rows) > page_size
     rows = rows[:page_size]
     next_cursor = ''
@@ -763,7 +822,7 @@ def _run_collect():
         collector.PROGRESS['running'] = False
         database.log('collect', '采集线程异常: {}'.format(e), 'error')
     finally:
-        database.backup_db()
+        database.backup_db(force=True)
 
 
 # -------- 数据整理（存量摘要升级 + 垃圾清理） --------
@@ -781,7 +840,7 @@ def _run_reprocess():
         rows = database.query(
             "SELECT id, title FROM intelligence WHERE length(coalesce(description,'')) < 60")
         for r in rows:
-            database.execute('DELETE FROM intelligence WHERE id=?', (r['id'],))
+            database.delete_intelligence(r['id'])
             st['deleted'] += 1
         st['log'].append('清理无正文条目: {} 条'.format(len(rows)))
 
@@ -797,7 +856,7 @@ def _run_reprocess():
             if pub and collector._is_stale(pub):
                 stale.append(r['id'])
         for rid in stale:
-            database.execute('DELETE FROM intelligence WHERE id=?', (rid,))
+            database.delete_intelligence(rid)
             st['deleted'] += 1
         st['log'].append('清理超龄旧文(发布>{}天): {} 条'.format(config.FRESH_DAYS, len(stale)))
 
@@ -851,8 +910,7 @@ def _run_reprocess():
                 x = res[i] or {}
                 score = x.get('score', 3)
                 if (not x.get('keep', True)) or score < config.AI_MIN_SCORE:
-                    database.execute('DELETE FROM intelligence WHERE id=?',
-                                     (r['id'],))
+                    database.delete_intelligence(r['id'])
                     st['deleted'] += 1
                 else:
                     new_sum = (x.get('summary') or '').strip() or r['summary']
@@ -875,6 +933,7 @@ def _run_reprocess():
     finally:
         st['running'] = False
         st['finished_at'] = database.now_str()
+        database.backup_db(force=True)
 
 
 @app.route('/api/admin/reprocess', methods=['POST'])
@@ -978,6 +1037,7 @@ def _run_media_rescan():
     finally:
         st['running'] = False
         st['finished_at'] = database.now_str()
+        database.backup_db(force=True)
 
 
 @app.route('/api/admin/media-rescan-status')
@@ -1057,6 +1117,8 @@ def admin_settings_get():
         'coll_time': database.get_config('coll_time', config.COLLECT_TIME),
         'push_time': database.get_config('push_time', config.PUSH_TIME),
         'push_top_n': int(database.get_config('push_top_n', str(config.PUSH_TOP_N))),
+        'intel_retention_days': int(database.get_config(
+            'intel_retention_days', str(config.INTEL_RETENTION_DAYS))),
         'admin_password_configured': bool(config.ADMIN_PASSWORD),
     }})
 
@@ -1068,7 +1130,15 @@ def admin_settings_save():
     for key in ('pushplus_token', 'coll_time', 'push_time', 'push_top_n'):
         if key in data:
             database.set_config(key, data[key])
-    database.backup_db()
+    if 'intel_retention_days' in data:
+        try:
+            days = int(data['intel_retention_days'])
+        except (TypeError, ValueError):
+            days = config.INTEL_RETENTION_DAYS
+        # 7~3650 天；0/负数视为永不过期，统一夹到安全区间
+        days = 0 if days <= 0 else max(7, min(3650, days))
+        database.set_config('intel_retention_days', str(days))
+    database.backup_db(force=True)
     # 热更新调度
     _reschedule()
     return jsonify({'ok': True})

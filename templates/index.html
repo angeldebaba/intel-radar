@@ -426,6 +426,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
           <div class="form-row" style="flex:1;min-width:130px;"><label>每日采集时间</label><input type="time" id="setCollTime" value="07:30"></div>
           <div class="form-row" style="flex:1;min-width:130px;"><label>每日推送时间</label><input type="time" id="setPushTime" value="08:00"></div>
           <div class="form-row" style="flex:1;min-width:130px;"><label>每日推送条数</label><input type="number" id="setTopN" value="3" min="1" max="10"></div>
+          <div class="form-row" style="flex:1;min-width:130px;"><label>数据保留天数</label><input type="number" id="setRetainDays" value="90" min="0" max="3650" title="超过保留期的情报与原文存档在每晚采集后自动清理；0=永久保留"></div>
         </div>
         <div class="form-row">
           <label>PushPlus Token <span style="color:var(--orange);">（免费微信推送必填）</span></label>
@@ -730,7 +731,9 @@ function cardHtml(it){
   if(it.vendor) chips+='<span class="chip chip-vendor">'+it.vendor+'</span>';
   if(it.industry) chips+='<span class="chip chip-industry">'+it.industry+'</span>';
   if(it.source) chips+='<span class="chip chip-src">'+it.source+'</span>';
-  var title = it.url ? '<a href="'+it.url+'" target="_blank">'+esc(it.title)+'</a>' : esc(it.title);
+  // 标题链接：有本地存档 → 存档页（防链接过期/反爬），无存档 → 原站
+  var href = it.has_archive ? ('/article/'+it.id) : it.url;
+  var title = it.url ? '<a href="'+href+'" target="_blank"'+(it.has_archive?' title="查看本地存档原文"':'')+'>'+esc(it.title)+'</a>' : esc(it.title);
   // AI 摘要完整展示；无 AI 摘要且原文过长时折叠为 6 行
   var sumText = it.summary || it.description || '';
   var hasAI = !!(it.summary && it.description && it.summary !== it.description);
@@ -1141,6 +1144,7 @@ function loadSettings(){
     document.getElementById('setCollTime').value=s.coll_time||'07:30';
     document.getElementById('setPushTime').value=s.push_time||'08:00';
     document.getElementById('setTopN').value=s.push_top_n||3;
+    document.getElementById('setRetainDays').value=(s.intel_retention_days||90);
   });
   api('/api/admin/analysis').then(function(res){
     if(res.ok){
@@ -1154,7 +1158,8 @@ function saveSettings(){
     pushplus_token:document.getElementById('setToken').value.trim(),
     coll_time:document.getElementById('setCollTime').value,
     push_time:document.getElementById('setPushTime').value,
-    push_top_n:parseInt(document.getElementById('setTopN').value)||3
+    push_top_n:parseInt(document.getElementById('setTopN').value)||3,
+    intel_retention_days:parseInt(document.getElementById('setRetainDays').value)||0
   })}).then(function(res){
     document.getElementById('opMsg').innerHTML = res.ok ? '<span class="msg ok">✅ 设置已保存，定时任务已更新</span>' : '<span class="msg err">保存失败</span>';
   });

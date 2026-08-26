@@ -516,6 +516,47 @@ def _follow_referenced_media(item, article_html, base_url, timeout=6):
     return out
 
 
+_ARCHIVE_STRIP_TAGS = ('script', 'style', 'noscript', 'link', 'meta', 'form',
+                       'button', 'input', 'select', 'textarea', 'template')
+
+
+def _sanitize_for_archive(html_text):
+    """净化原文 HTML 用于本地存档回放：
+    - 剥 script/style/表单控件等非内容节点与注释
+    - iframe 仅保留已知视频播放器白名单（B站/腾讯/优酷等）
+    - 剥离 on* 事件属性与 javascript: 链接
+    返回 (净化HTML, 纯文本)，超长截断；失败返回 ('', '')。"""
+    if not html_text:
+        return '', ''
+    try:
+        soup = BeautifulSoup(html_text[:400000], 'html.parser')
+        for t in soup.find_all(list(_ARCHIVE_STRIP_TAGS)):
+            t.decompose()
+        try:
+            from bs4 import Comment
+            for c in soup.find_all(string=lambda s: isinstance(s, Comment)):
+                c.extract()
+        except Exception:
+            pass
+        for t in soup.find_all('iframe'):
+            src = (t.get('src') or '').lower()
+            if not any(h in src for h in _VIDEO_EMBED_HOSTS):
+                t.decompose()
+        for t in soup.find_all(True):
+            for attr in list(t.attrs):
+                if attr.lower().startswith('on'):
+                    del t[attr]
+            href = t.get('href')
+            if href and str(href).strip().lower().startswith('javascript:'):
+                del t['href']
+        html = str(soup)
+        text = soup.get_text('\n')
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+        return html[:config.ARCHIVE_HTML_LIMIT], text[:config.ARCHIVE_TEXT_LIMIT]
+    except Exception:
+        return '', ''
+
+
 def _enrich_article_media(item, timeout=6):
     """抓文章页提取缩略图 + 正文图片/视频（含有效性校验），写入 item['image']/item['media']。
 
@@ -537,6 +578,11 @@ def _enrich_article_media(item, timeout=6):
             og = _norm_media_url(_extract_og_image(page[:200000], base), base)
             if og and og not in media['images']:
                 media['images'].insert(0, og)
+            # 全文存档：净化后暂存到 item，待入库成功后随 intel_id 落库
+            # （JS 渲染页/空壳页纯文本极短，存了也是垃圾，不存）
+            arch_html, arch_text = _sanitize_for_archive(page)
+            if len(arch_text) >= 60:
+                item['_arch'] = {'html': arch_html, 'text': arch_text, 'base': base}
         # 正文没有视频时追溯外链（微信等 JS 渲染页、页面抓取失败均走这条路）
         if not media['videos']:
             _merge_media(media, _follow_referenced_media(item, page, base, timeout=timeout))
@@ -1484,8 +1530,9 @@ def collect_once():
 
             industry = detect_industry(title, raw_summary)
 
-            # 媒体抓取：抓文章页提取图片/视频嵌入卡片（限额控制总耗时）
-            if media_enriched < config.MEDIA_ENRICH_LIMIT:
+            # 媒体抓取 + 全文存档：抓文章页提取图片/视频并净化存档原文
+            # （限额控制总耗时；存档与媒体提取共用同一次请求，不额外开销）
+            if media_enriched < config.ARCHIVE_FETCH_LIMIT:
                 _enrich_article_media(it)
                 media_enriched += 1
 
@@ -1506,6 +1553,14 @@ def collect_once():
             })
             if ok:
                 added += 1
+                # 全文存档随新增情报落库（ok 为新情报自增 id）
+                arch = it.get('_arch')
+                if arch and ok is not True:
+                    try:
+                        database.save_archive(ok, url, arch.get('base', ''),
+                                              arch.get('html', ''), arch.get('text', ''))
+                    except Exception as e:
+                        database.log('collect', '存档失败: {} | {}'.format(title[:40], e), 'warn')
 
     # 阶段 A：逐个厂商抓官网
     official_counts = {}
@@ -1551,10 +1606,20 @@ def collect_once():
             database.log('collect', '查询失败: {} | {}'.format(query, e), 'warn')
         time.sleep(random.uniform(2.0, 3.5))
 
+    # 保留期清理：默认 90 天（后台可配），连带清理关联存档
+    try:
+        purged, purged_arch = database.purge_intelligence()
+        if purged or purged_arch:
+            database.log('collect', '保留期清理: 情报 {} 条 / 存档 {} 条'.format(
+                purged, purged_arch), 'ok')
+    except Exception as e:
+        database.log('collect', '保留期清理失败: {}'.format(e), 'warn')
+
     _update_progress(running=False, done=total_steps, added=added,
                      errors=errors, current='', finished_at=database.now_str())
     database.log('collect', '新增 {} 条 / 总步数 {} / 错误 {}'.format(
         added, total_steps, errors), 'ok' if errors == 0 else 'warn')
+    database.backup_db(force=True)
     return added
 
 

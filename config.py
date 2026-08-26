@@ -49,6 +49,21 @@ MANUAL_COOLDOWN_HOURS = float(os.environ.get('MANUAL_COOLDOWN_HOURS', '4'))
 # 时效控制：文章发布时间超过N天不入库（官网+搜索引擎结果统一按此过滤）
 FRESH_DAYS = int(os.environ.get('FRESH_DAYS', '30'))
 
+# ===== 全文存档（防链接过期/反爬导致原文不可回看） =====
+# 单次采集最多抓多少篇文章页做全文存档（含媒体提取，每篇 1-2 次 HTTP 请求）
+ARCHIVE_FETCH_LIMIT = int(os.environ.get('ARCHIVE_FETCH_LIMIT', '30'))
+# 单篇存档净化 HTML / 纯文本的长度上限（字符）
+ARCHIVE_HTML_LIMIT = int(os.environ.get('ARCHIVE_HTML_LIMIT', '300000'))
+ARCHIVE_TEXT_LIMIT = int(os.environ.get('ARCHIVE_TEXT_LIMIT', '100000'))
+
+# ===== 数据保留期 =====
+# 情报及关联存档默认保留天数（后台可改，存 config 表 intel_retention_days；每晚采集后自动清理）
+INTEL_RETENTION_DAYS = int(os.environ.get('INTEL_RETENTION_DAYS', '90'))
+
+# ===== 备份节流 =====
+# SQLite 全库备份到对象存储的最小间隔秒数（此前逐条写库都全量备份，库变大后会拖垮采集）
+BACKUP_INTERVAL = int(os.environ.get('BACKUP_INTERVAL', '600'))
+
 # ===== 媒体抓取（原文图片/视频嵌入卡片） =====
 # 每次采集最多抓多少篇文章页提取图片/视频（每篇多一次 HTTP 请求，控制总耗时）
 MEDIA_ENRICH_LIMIT = int(os.environ.get('MEDIA_ENRICH_LIMIT', '10'))

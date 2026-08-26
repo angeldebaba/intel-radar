@@ -5,7 +5,8 @@
 """
 import os
 import json
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 
 import config
 
@@ -49,10 +50,22 @@ def restore_from_backup():
         pass
 
 
-def backup_db():
-    """把 SQLite 数据库备份到对象存储挂载目录，容器重启后可恢复"""
+_last_backup_ts = [0.0]   # 上次全库备份时间戳（进程级节流）
+
+
+def backup_db(force=False):
+    """把 SQLite 数据库备份到对象存储挂载目录，容器重启后可恢复。
+
+    节流：默认 BACKUP_INTERVAL 秒内只备份一次（此前逐条写库都全量拷贝，
+    存档全文/图片入库后库会到几十上百 MB，逐条备份会拖垮采集）。
+    force=True 用于采集结束/设置保存等关键节点，绕过节流立即备份。
+    """
     if PG or not config.BACKUP_DIR:
         return
+    now = time.time()
+    if not force and now - _last_backup_ts[0] < config.BACKUP_INTERVAL:
+        return
+    _last_backup_ts[0] = now
     try:
         os.makedirs(config.BACKUP_DIR, exist_ok=True)
         import sqlite3
@@ -137,6 +150,16 @@ def init_db():
             sessions INTEGER DEFAULT 0,
             PRIMARY KEY (date, path)
         )''',
+        '''CREATE TABLE IF NOT EXISTS article_archive (
+            id %(id)s,
+            intel_id INTEGER NOT NULL,
+            url TEXT DEFAULT '',
+            base_url TEXT DEFAULT '',
+            html TEXT DEFAULT '',
+            plain_text TEXT DEFAULT '',
+            fetched_at TEXT DEFAULT ''
+        )''' % {'id': id_def},
+        'CREATE INDEX IF NOT EXISTS idx_archive_intel ON article_archive(intel_id)',
         'CREATE INDEX IF NOT EXISTS idx_intel_date ON intelligence(date)',
         'CREATE INDEX IF NOT EXISTS idx_intel_vendor ON intelligence(vendor)',
         'CREATE INDEX IF NOT EXISTS idx_intel_industry ON intelligence(industry)',
@@ -181,7 +204,7 @@ def init_db():
 
     conn.commit()
     conn.close()
-    backup_db()
+    backup_db(force=True)
 
 
 def query(sql, args=()):
@@ -252,7 +275,7 @@ def now_str():
 
 
 def add_intelligence(item):
-    """新增一条情报；按标题/URL 全局去重（跨日期），已存在则跳过"""
+    """新增一条情报；按标题/URL 全局去重（跨日期），已存在返回 False，新增返回自增 id"""
     title = item.get('title', '')
     url = item.get('url', '')
     exist = query_one(
@@ -261,7 +284,7 @@ def add_intelligence(item):
     if exist:
         return False
     placeholders = ','.join([PH] * 14)
-    execute('''
+    new_id = execute('''
         INSERT INTO intelligence
         (date, vendor, industry, title, source, url, summary, description, image, media, relevance, tags, published, collected_at)
         VALUES (''' + placeholders + ''')''', (
@@ -281,7 +304,58 @@ def add_intelligence(item):
         now_str(),
     ))
     backup_db()
+    return new_id if new_id else True
+
+
+def save_archive(intel_id, url='', base_url='', html='', plain_text=''):
+    """保存/覆盖一条情报的全文存档（净化后 HTML + 纯文本）"""
+    if not intel_id or not (html or plain_text):
+        return False
+    execute('DELETE FROM article_archive WHERE intel_id=' + PH, (intel_id,))
+    execute('INSERT INTO article_archive(intel_id,url,base_url,html,plain_text,fetched_at) '
+            'VALUES (' + ','.join([PH] * 6) + ')',
+            (intel_id, url or '', base_url or '', html or '', plain_text or '', now_str()))
+    backup_db()
     return True
+
+
+def get_archive(intel_id):
+    """读取一条情报的全文存档"""
+    return query_one('SELECT * FROM article_archive WHERE intel_id=' + PH, (intel_id,))
+
+
+def delete_intelligence(iid):
+    """删除一条情报及其关联存档（防止 article_archive 留孤儿数据）"""
+    execute('DELETE FROM intelligence WHERE id=' + PH, (iid,))
+    execute('DELETE FROM article_archive WHERE intel_id=' + PH, (iid,))
+
+
+def purge_intelligence(keep_days=None):
+    """按保留期清理过期情报与关联存档；返回 (删除情报数, 删除存档数)。
+
+    keep_days 缺省读 config 表 intel_retention_days（后台可改），再退回
+    config.INTEL_RETENTION_DAYS；<=0 表示永不过期。
+    """
+    if keep_days is None:
+        try:
+            keep_days = int(get_config('intel_retention_days', '') or config.INTEL_RETENTION_DAYS)
+        except (TypeError, ValueError):
+            keep_days = config.INTEL_RETENTION_DAYS
+    try:
+        keep_days = int(keep_days)
+    except (TypeError, ValueError):
+        keep_days = config.INTEL_RETENTION_DAYS
+    if keep_days <= 0:
+        return 0, 0
+    cut = (datetime.now() - timedelta(days=keep_days)).strftime('%Y-%m-%d')
+    c1 = query_one('SELECT COUNT(*) AS c FROM intelligence WHERE date<' + PH, (cut,))['c']
+    if c1:
+        execute('DELETE FROM intelligence WHERE date<' + PH, (cut,))
+    c2 = query_one('SELECT COUNT(*) AS c FROM article_archive WHERE intel_id NOT IN '
+                   '(SELECT id FROM intelligence)')['c']
+    if c2:
+        execute('DELETE FROM article_archive WHERE intel_id NOT IN (SELECT id FROM intelligence)')
+    return c1, c2
 
 
 def log(action, detail='', status='ok'):
