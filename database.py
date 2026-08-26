@@ -159,6 +159,21 @@ def init_db():
             plain_text TEXT DEFAULT '',
             fetched_at TEXT DEFAULT ''
         )''' % {'id': id_def},
+        '''CREATE TABLE IF NOT EXISTS quarantine (
+            id %(id)s,
+            created_at TEXT DEFAULT '',
+            vendor TEXT DEFAULT '',
+            title TEXT NOT NULL,
+            source TEXT DEFAULT '',
+            url TEXT DEFAULT '',
+            summary TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            published TEXT DEFAULT '',
+            reason TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            metrics TEXT DEFAULT '',
+            origin TEXT DEFAULT 'collect'
+        )''' % {'id': id_def},
         'CREATE INDEX IF NOT EXISTS idx_archive_intel ON article_archive(intel_id)',
         'CREATE INDEX IF NOT EXISTS idx_intel_date ON intelligence(date)',
         'CREATE INDEX IF NOT EXISTS idx_intel_vendor ON intelligence(vendor)',
@@ -328,6 +343,59 @@ def delete_intelligence(iid):
     """删除一条情报及其关联存档（防止 article_archive 留孤儿数据）"""
     execute('DELETE FROM intelligence WHERE id=' + PH, (iid,))
     execute('DELETE FROM article_archive WHERE intel_id=' + PH, (iid,))
+
+
+# ==================== 隔离区（低质条目备查） ====================
+def add_quarantine(item, reason, note='', metrics=None, origin='collect',
+                   exclude_intel_id=None):
+    """低质条目入隔离区：原始数据留存备查（标题/URL 与 intelligence、quarantine 双查重）。
+    exclude_intel_id：存量扫描把情报移入隔离区时，排除情报库里"自己这一行"。
+    返回自增 id；已存在（或已在情报库）返回 False。"""
+    title = (item.get('title') or '').strip()
+    url = (item.get('url') or '').strip()
+    if not title:
+        return False
+    if exclude_intel_id:
+        exist = query_one(
+            'SELECT id FROM intelligence WHERE (title=' + PH + " OR (url!='' AND url=" + PH + '))'
+            ' AND id!=' + PH, (title, url, exclude_intel_id))
+    else:
+        exist = query_one(
+            'SELECT id FROM intelligence WHERE title=' + PH + " OR (url!='' AND url=" + PH + ')',
+            (title, url))
+    if exist:
+        return False
+    exist = query_one(
+        'SELECT id FROM quarantine WHERE title=' + PH + " OR (url!='' AND url=" + PH + ')',
+        (title, url))
+    if exist:
+        return False
+    import json as _json
+    return execute('''
+        INSERT INTO quarantine
+        (created_at, vendor, title, source, url, summary, description, published, reason, note, metrics, origin)
+        VALUES (''' + ','.join([PH] * 12) + ''')''', (
+        now_str(),
+        item.get('vendor', ''),
+        title,
+        item.get('source', ''),
+        url,
+        (item.get('summary') or '')[:500],
+        (item.get('description') or '')[:500],
+        item.get('published', ''),
+        reason or '',
+        note or '',
+        _json.dumps(metrics or {}, ensure_ascii=False),
+        origin or 'collect',
+    ))
+
+
+def quarantine_stats():
+    """隔离区统计：总数 + 按原因分类计数"""
+    total = query_one('SELECT COUNT(*) AS c FROM quarantine')['c']
+    by_reason = query('SELECT reason, COUNT(*) AS c FROM quarantine '
+                      'GROUP BY reason ORDER BY c DESC')
+    return {'total': total, 'by_reason': by_reason}
 
 
 def purge_intelligence(keep_days=None):

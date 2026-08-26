@@ -1155,6 +1155,128 @@ def admin_logs():
         return jsonify({'ok': False, 'error': '读取日志失败: {}'.format(e)}), 500
 
 
+# -------- 隔离区（低质条目审查） --------
+@app.route('/api/admin/quarantine')
+@require_admin
+def admin_quarantine_list():
+    """隔离区清单 + 按原因分类统计（被质量门禁拦截的原始数据备查）"""
+    try:
+        rows = database.query(
+            'SELECT id, created_at, vendor, title, source, url, reason, note, origin '
+            'FROM quarantine ORDER BY id DESC LIMIT 200')
+        return jsonify({'ok': True, 'data': rows,
+                        'stats': database.quarantine_stats()})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/quarantine/<int:qid>')
+@require_admin
+def admin_quarantine_detail(qid):
+    """单条隔离记录全量字段（含原始摘要/描述与质量指标）"""
+    row = database.query_one('SELECT * FROM quarantine WHERE id=?', (qid,))
+    if not row:
+        return jsonify({'ok': False, 'error': '记录不存在'}), 404
+    return jsonify({'ok': True, 'data': row})
+
+
+@app.route('/api/admin/quarantine/scan', methods=['POST'])
+@require_admin
+def admin_quarantine_scan():
+    """审计存量情报：按与采集门禁一致的规则复检，低质条目移入隔离区（原数据备查）。
+    参数 days：只审计近 N 天（默认 90）；dry_run=1 只报告不动库。"""
+    data = request.get_json(silent=True) or {}
+    days = max(1, min(3650, int(data.get('days', 90) or 90)))
+    dry_run = bool(data.get('dry_run'))
+    cut = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+    rows = database.query('SELECT * FROM intelligence WHERE date>=?', (cut,))
+    moved = []
+    for r in rows:
+        arch = database.get_archive(r['id'])
+        metrics = None
+        if arch:
+            metrics = collector._page_quality_metrics(arch.get('html'), arch.get('plain_text'))
+        snippet = (r.get('summary') or '') + ' ' + (r.get('description') or '')
+        reason, note = collector.quality_verdict(
+            url=r.get('url'), title=r.get('title'),
+            snippet=snippet, metrics=metrics)
+        if not reason:
+            continue
+        moved.append({'id': r['id'], 'title': r['title'], 'url': r.get('url'),
+                      'reason': reason, 'note': note,
+                      'metrics': metrics or {'eff_snippet':
+                                             collector._effective_snippet_len(snippet)}})
+        if dry_run:
+            continue
+        if database.add_quarantine(r, reason, note, metrics=metrics or {},
+                                   origin='scan', exclude_intel_id=r['id']):
+            database.delete_intelligence(r['id'])
+        else:
+            moved[-1]['note'] += '（隔离区写入失败：标题/URL 已存在，仅保留情报）'
+    if not dry_run and moved:
+        database.log('collect', '存量质量扫描: 隔离 {} 条（近{}天）'.format(len(moved), days), 'ok')
+        database.backup_db(force=True)
+    return jsonify({'ok': True, 'scanned': len(rows), 'quarantined': len(moved),
+                    'dry_run': dry_run, 'data': moved})
+
+
+@app.route('/api/admin/quarantine/promote', methods=['POST'])
+@require_admin
+def admin_quarantine_promote():
+    """深抓复检：重新抓取隔离条目的 URL，按质量门禁复判。
+    通过 → 入库（含全文存档+媒体）；仍不通过 → 返回原因（人审后可 DELETE 放弃）。"""
+    data = request.get_json(silent=True) or {}
+    qid = int(data.get('id', 0) or 0)
+    q = database.query_one('SELECT * FROM quarantine WHERE id=?', (qid,))
+    if not q:
+        return jsonify({'ok': False, 'error': '隔离记录不存在'}), 404
+    url = q.get('url') or ''
+    if not url.startswith('http'):
+        return jsonify({'ok': False, 'error': '无有效 URL，无法深抓'}), 400
+
+    item = {'title': q['title'], 'url': url, 'source': q.get('source') or '',
+            'summary': q.get('summary') or '', 'description': q.get('description') or '',
+            'published': q.get('published') or '', 'vendor': q.get('vendor') or ''}
+    collector._enrich_article_media(item)
+    metrics = item.get('_quality')
+    reason, note = collector.quality_verdict(url=url, title=q['title'],
+                                              snippet=(q.get('summary') or '') + ' ' + (q.get('description') or ''),
+                                              metrics=metrics)
+    if reason:
+        return jsonify({'ok': False, 'reason': reason, 'note': note,
+                        'metrics': metrics}), 200
+
+    rel = collector.score_relevance(q['title'], q.get('summary') or '')
+    new_id = database.add_intelligence({
+        'date': database.today_str(), 'vendor': q.get('vendor') or '',
+        'industry': collector.detect_industry(q['title'], q.get('summary') or ''),
+        'title': q['title'], 'source': q.get('source') or '', 'url': url,
+        'summary': q.get('summary') or '', 'description': q.get('description') or '',
+        'image': item.get('image', ''), 'media': item.get('media') or {},
+        'relevance': max(rel, 3), 'tags': collector.detect_tags(q['title'], q.get('summary') or ''),
+        'published': q.get('published') or '',
+    })
+    if not new_id:
+        return jsonify({'ok': False, 'error': '标题/URL 已存在于情报库'}), 409
+    arch = item.get('_arch')
+    if arch:
+        database.save_archive(new_id, url, arch.get('base', ''),
+                              arch.get('html', ''), arch.get('text', ''))
+    database.execute('DELETE FROM quarantine WHERE id=?', (qid,))
+    database.backup_db(force=True)
+    database.log('collect', '隔离条目深抓复检通过，恢复入库: {}'.format(q['title'][:40]), 'ok')
+    return jsonify({'ok': True, 'intel_id': new_id, 'metrics': metrics})
+
+
+@app.route('/api/admin/quarantine/<int:qid>', methods=['DELETE'])
+@require_admin
+def admin_quarantine_delete(qid):
+    """放弃一条隔离条目（人审后确认无价值，从备查区移除）"""
+    database.execute('DELETE FROM quarantine WHERE id=?', (qid,))
+    database.backup_db()
+    return jsonify({'ok': True})
+
+
 # ==================== 调度器 ====================
 scheduler = BackgroundScheduler(timezone='Asia/Shanghai')
 

@@ -56,6 +56,11 @@ ARCHIVE_FETCH_LIMIT = int(os.environ.get('ARCHIVE_FETCH_LIMIT', '30'))
 ARCHIVE_HTML_LIMIT = int(os.environ.get('ARCHIVE_HTML_LIMIT', '300000'))
 ARCHIVE_TEXT_LIMIT = int(os.environ.get('ARCHIVE_TEXT_LIMIT', '100000'))
 
+# ===== 内容质量门禁（2026-08-26） =====
+# 拦截"仅含大量链接、无实质文本"的低质条目（首页/下载站/目录页/导航堆砌），
+# 拦下的原始数据进 quarantine 隔离区备查，后台可审查/深抓复检/恢复入库
+QUARANTINE_ENABLED = os.environ.get('QUARANTINE_ENABLED', '1') == '1'
+
 # ===== 数据保留期 =====
 # 情报及关联存档默认保留天数（后台可改，存 config 表 intel_retention_days；每晚采集后自动清理）
 INTEL_RETENTION_DAYS = int(os.environ.get('INTEL_RETENTION_DAYS', '90'))

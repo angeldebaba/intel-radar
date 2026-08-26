@@ -92,6 +92,108 @@ def _clean_text(s):
     return s
 
 
+# ==================== 内容质量门禁（2026-08-26） ====================
+# 背景：搜狗等引擎会把"经销商首页/下载站/产品目录页"当搜索结果返回，
+# 这类页面仅包含大量导航链接、无实质文本，AI 却能从关键词里编出像样的摘要，
+# 混进情报库污染质量。此门禁在入库前按内容形态拦截，低质条目进隔离区备查。
+
+# 搜索引擎摘要里的截断残缺 URL（如 "CSDNhttps://blog.csdn.net/a...2026-08-13"）
+_TRUNC_URL_RE = re.compile(r'\S*https?://\S*(?:\.\.\.|…)\S*')
+# 下载站标题特征（"xx软件下载-APP下载 v3.2.9-KK下载站"）
+_DOWNLOAD_TITLE_RE = re.compile(r'下载站|app下载|软件下载|绿色下载|手机版下载|apk下载')
+# 站点根路径（首页）
+_ROOT_PATHS = ('', '/', '/index.html', '/index.htm', '/index.php', '/index.asp',
+               '/default.html', '/default.aspx', '/home')
+# 频道/目录页路径（聚合列表，无单篇正文）
+_CATALOG_PATHS = ('/products', '/product', '/downloads', '/download',
+                  '/solutions', '/solution', '/news', '/about', '/cases', '/case')
+
+
+def _strip_truncated_urls(s):
+    """清除摘要/描述里被搜索引擎截断的残缺 URL（含粘连的前缀噪音，如 CSDNhttps://...）"""
+    if not s:
+        return ''
+    return re.sub(r'\s{2,}', ' ', _TRUNC_URL_RE.sub(' ', s)).strip()
+
+
+def _effective_snippet_len(s):
+    """摘要有效文本长度：去掉 URL 与空白后的实质字数"""
+    if not s:
+        return 0
+    return len(re.sub(r'\s+', '', re.sub(r'https?://\S+', ' ', s)))
+
+
+def _url_page_verdict(url):
+    """按 URL 形态判页型：根路径=首页，目录尾缀=频道页；内容页返回 ''"""
+    try:
+        path = (urlparse(url or '').path or '').lower().rstrip('/')
+    except Exception:
+        return ''
+    if path in _ROOT_PATHS:
+        return 'homepage_url'
+    if any(path.endswith(c) for c in _CATALOG_PATHS):
+        return 'catalog_url'
+    return ''
+
+
+def _page_quality_metrics(sanitized_html, plain_text):
+    """净化后页面的内容指标：链接数 / 链接文本长度 / 正文长度 / 链接文本占比"""
+    if not sanitized_html and not plain_text:
+        return None
+    html = sanitized_html or ''
+    n_links = len(re.findall(r'<a\b', html))
+    link_len = 0
+    if html:
+        anchor = ''.join(re.findall(r'<a\b[^>]*>(.*?)</a>', html, re.S))
+        link_len = len(re.sub(r'\s+', '', re.sub(r'<[^>]+>', ' ', anchor)))
+    text_len = len(re.sub(r'\s+', '', plain_text or ''))
+    return {'links': n_links, 'link_len': link_len, 'text_len': text_len,
+            'link_ratio': round(link_len / max(1, text_len), 3)}
+
+
+def quality_verdict(url='', title='', snippet='', metrics=None):
+    """内容质量判定：通过返回 ('', '')；不通过返回 (原因码, 中文说明)。
+
+    规则（复合判定，单一链接占比不可靠——CSDN 真文章推荐位链接也多）：
+    1. download_page  下载站/软件下载页标题特征
+    2. homepage_url   站点根路径（首页即导航堆砌）
+    3. catalog_url    产品/方案/新闻频道目录页
+    4. nav_dump       小页面(正文<3000字)且链接文本占比≥50%、链接≥25个
+    5. thin_page      正文极短(<100字)且摘要单薄(<80字)
+    6. empty_snippet  摘要仅剩链接残片，有效文本<30字
+    """
+    if _DOWNLOAD_TITLE_RE.search((title or '').lower()):
+        return 'download_page', '下载站/软件下载页，无情报价值'
+    v = _url_page_verdict(url)
+    if v == 'homepage_url':
+        return v, '站点首页（根路径），导航链接堆砌无正文'
+    if v == 'catalog_url':
+        return v, '产品/方案/新闻频道目录页，聚合列表无单篇正文'
+    eff = _effective_snippet_len(snippet)
+    if metrics:
+        ratio = metrics.get('link_ratio', 0)
+        if (ratio >= 0.5 and metrics.get('links', 0) >= 25
+                and metrics.get('text_len', 0) < 3000):
+            return 'nav_dump', '小页面链接堆砌（链接文本占比%.0f%%，正文%d字）' % (
+                ratio * 100, metrics.get('text_len', 0))
+        if metrics.get('text_len', 0) < 100 and eff < 80:
+            return 'thin_page', '正文极短(%d字)且摘要单薄' % metrics.get('text_len', 0)
+    elif eff < 30:
+        return 'empty_snippet', '摘要仅剩链接残片，有效文本不足30字'
+    return '', ''
+
+
+def _quarantine_item(it, reason, note, origin='collect'):
+    """低质条目入隔离区（原始数据留存备查）；返回是否成功"""
+    if not getattr(config, 'QUARANTINE_ENABLED', True):
+        return False
+    try:
+        return database.add_quarantine(it, reason, note, origin=origin)
+    except Exception as e:
+        database.log('collect', '隔离区写入失败: {} | {}'.format((it.get('title') or '')[:40], e), 'warn')
+        return False
+
+
 def _extract_og_image(html_text, base_url=''):
     """从文章页提取 og:image 或正文首图，限定 jpg/png/webp。
     兜底首图优先取与页面同注册域的（防轮播广告图被当首图引入域名白名单）。"""
@@ -445,8 +547,8 @@ def _follow_referenced_media(item, article_html, base_url, timeout=6):
 
     def _add(raw):
         u = (raw or '').strip()
-        # 结尾省略号 = 搜索摘要截断的残缺 URL，跳过
-        if u.endswith('..') or u.endswith('…'):
+        # 含省略号 = 搜索摘要截断的残缺 URL（如 /a...2026-08-07），追了必 404
+        if '...' in u or '…' in u:
             return
         u = u.rstrip('.,;，。；)）】》>')
         if not u.startswith('http'):
@@ -578,9 +680,13 @@ def _enrich_article_media(item, timeout=6):
             og = _norm_media_url(_extract_og_image(page[:200000], base), base)
             if og and og not in media['images']:
                 media['images'].insert(0, og)
+            # 内容质量指标：导航堆砌/空洞页检测（无论是否够格存档都要算）
+            arch_html, arch_text = _sanitize_for_archive(page)
+            qm = _page_quality_metrics(arch_html, arch_text)
+            if qm is not None:
+                item['_quality'] = qm
             # 全文存档：净化后暂存到 item，待入库成功后随 intel_id 落库
             # （JS 渲染页/空壳页纯文本极短，存了也是垃圾，不存）
-            arch_html, arch_text = _sanitize_for_archive(page)
             if len(arch_text) >= 60:
                 item['_arch'] = {'html': arch_html, 'text': arch_text, 'base': base}
         # 正文没有视频时追溯外链（微信等 JS 渲染页、页面抓取失败均走这条路）
@@ -1476,6 +1582,10 @@ def collect_once():
                 continue
             url_seen.add(url)
             title_seen.add(title)
+            # 摘要/描述清洗：剥离搜索引擎截断的残缺 URL（含粘连前缀与尾部日期）
+            it['summary'] = _strip_truncated_urls(it.get('summary') or '')
+            it['description'] = _strip_truncated_urls(it.get('description') or '')
+            raw_summary = it['summary'] or it['description'] or ''
             # 发布时间规范化（发布时间抓取失败时尝试从标题/正文提取）
             published = _norm_date(it.get('published') or '')
             if not published:
@@ -1487,9 +1597,17 @@ def collect_once():
                 continue
             # 正文预筛：导航页/聚合页/空壳页（正文<60字）没有可提炼内容，
             # AI 拿不到信息只会产出垃圾摘要，直接跳过省 API 调用
-            body = (it.get('summary') or it.get('description') or '').strip()
+            body = raw_summary.strip()
             if len(body) < 60:
                 database.log('collect', '预筛跳过无正文页: {}'.format(title[:40]), 'ok')
+                continue
+            # 内容质量门禁（廉价规则：下载站/首页/目录页 URL 形态）：
+            # 在 AI 分析前拦截，省 API 调用；低质条目进隔离区备查
+            reason, note = quality_verdict(url=url, title=title,
+                                           snippet=raw_summary)
+            if reason:
+                if _quarantine_item(it, reason, note):
+                    database.log('collect', '质量门禁隔离[{}]: {}'.format(reason, title[:45]), 'ok')
                 continue
             candidates.append(it)
         if not candidates:
@@ -1535,6 +1653,16 @@ def collect_once():
             if media_enriched < config.ARCHIVE_FETCH_LIMIT:
                 _enrich_article_media(it)
                 media_enriched += 1
+                # 内容质量门禁（页面指标）：导航堆砌/空洞页在入库前拦截
+                qm = it.get('_quality')
+                if qm:
+                    reason2, note2 = quality_verdict(
+                        url=url, title=title, snippet=raw_summary, metrics=qm)
+                    if reason2:
+                        if _quarantine_item(it, reason2, note2):
+                            database.log('collect', '质量门禁隔离[{}]: {}'.format(
+                                reason2, title[:45]), 'ok')
+                        continue
 
             ok = database.add_intelligence({
                 'date': database.today_str(),
