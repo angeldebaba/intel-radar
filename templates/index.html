@@ -267,6 +267,75 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   table.tbl{font-size:12px;}
   .feed-footer{padding:14px 0 30px;}
 }
+
+/* ===== 热点统计看板 ===== */
+.hot-kv-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+@media(min-width:768px){.hot-kv-grid{grid-template-columns:repeat(4,1fr);}}
+.hot-kv{background:linear-gradient(135deg,var(--bg2),var(--bg3));border:1px solid var(--border);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;}
+.hot-kv::after{content:"";position:absolute;right:-18px;top:-18px;width:70px;height:70px;border-radius:50%;background:rgba(88,166,255,.08);}
+.hot-kv .k{font-size:12px;color:var(--text2);}
+.hot-kv .v{font-size:26px;font-weight:700;color:var(--text);margin-top:4px;font-variant-numeric:tabular-nums;}
+.hot-kv .sub{font-size:11px;color:var(--text3);margin-top:2px;}
+.hot-kv.green::after{background:rgba(63,185,80,.12);}
+.hot-kv.orange::after{background:rgba(240,160,32,.12);}
+.hot-kv.purple::after{background:rgba(188,140,255,.12);}
+.hot-kv.teal::after{background:rgba(57,197,207,.12);}
+
+.hot-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px;}
+@media(min-width:900px){.hot-grid-2{grid-template-columns:1fr 1fr;}}
+.hot-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.hot-card h3{font-size:13.5px;color:var(--text);font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.hot-card h3 .hint{font-weight:400;}
+
+.hot-bar{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.hot-bar .lbl{width:96px;font-size:12px;color:var(--text2);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.hot-bar .track{flex:1;background:var(--bg3);border-radius:4px;height:14px;overflow:hidden;min-width:40px;}
+.hot-bar .fill{height:100%;border-radius:4px;transition:width .5s ease;}
+.hot-bar .fill.blue{background:linear-gradient(90deg,#58a6ff,#39c5cf);}
+.hot-bar .fill.purple{background:linear-gradient(90deg,#bc8cff,#58a6ff);}
+.hot-bar .fill.orange{background:linear-gradient(90deg,#f0a020,#f85149);}
+.hot-bar .fill.green{background:linear-gradient(90deg,#3fb950,#39c5cf);}
+.hot-bar .num{font-size:11px;color:var(--text3);width:30px;flex-shrink:0;text-align:right;}
+
+/* 热词云 */
+.keyword-cloud{display:flex;flex-wrap:wrap;gap:8px;}
+.keyword-cloud .kw{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:14px;background:rgba(88,166,255,.1);color:var(--blue);font-size:12.5px;border:1px solid rgba(88,166,255,.18);transition:transform .15s,background .15s;}
+.keyword-cloud .kw:hover{transform:translateY(-1px);background:rgba(88,166,255,.18);}
+.keyword-cloud .kw .cnt{font-size:10.5px;color:var(--text3);font-variant-numeric:tabular-nums;}
+.keyword-cloud .kw.hot{background:rgba(240,160,32,.13);color:#f5b84e;border-color:rgba(240,160,32,.28);}
+.keyword-cloud .kw.hot .cnt{color:#f5b84e;}
+.keyword-cloud .kw.cool{background:rgba(57,197,207,.1);color:#5dd3db;border-color:rgba(57,197,207,.2);}
+
+/* 趋势 SVG 折线 */
+.trend-svg{width:100%;height:180px;display:block;}
+.trend-svg .area{fill:url(#trendGrad);opacity:.85;}
+.trend-svg .line{fill:none;stroke:var(--blue);stroke-width:2;}
+.trend-svg .bar-hi{fill:rgba(240,160,32,.55);}
+.trend-svg .grid{stroke:var(--border);stroke-width:1;}
+.trend-svg .axis{fill:var(--text3);font-size:10px;}
+.trend-svg .dot{fill:var(--blue);}
+
+/* 头条卡片 */
+.hot-top-list{display:flex;flex-direction:column;gap:8px;}
+.hot-top-item{display:flex;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;transition:border-color .15s;}
+.hot-top-item:hover{border-color:var(--blue);}
+.hot-rank{width:24px;height:24px;border-radius:6px;background:rgba(88,166,255,.15);color:var(--blue);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;}
+.hot-rank.r1{background:rgba(248,81,73,.18);color:#ff7b72;}
+.hot-rank.r2{background:rgba(240,160,32,.18);color:#f5b84e;}
+.hot-rank.r3{background:rgba(188,140,255,.18);color:#cba8ff;}
+.hot-top-body{min-width:0;flex:1;}
+.hot-top-title{font-size:13.5px;color:var(--text);font-weight:500;line-height:1.4;}
+.hot-top-title:hover{color:var(--blue);}
+.hot-top-meta{font-size:11.5px;color:var(--text3);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;}
+.hot-top-meta .stars{color:var(--orange);letter-spacing:1px;}
+.hot-top-summary{font-size:12px;color:var(--text2);margin-top:4px;line-height:1.55;}
+
+/* 相关度分布 */
+.rel-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.rel-row .rl{width:36px;font-size:12px;color:var(--orange);flex-shrink:0;}
+.rel-row .track{flex:1;background:var(--bg3);border-radius:4px;height:18px;overflow:hidden;}
+.rel-row .fill{height:100%;border-radius:4px;background:linear-gradient(90deg,rgba(240,160,32,.6),#f0a020);}
+.rel-row .num{font-size:11.5px;color:var(--text2);width:40px;flex-shrink:0;text-align:right;}
 </style>
 </head>
 <body>
@@ -276,6 +345,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <div class="topbar-spacer"></div>
     <div class="topbar-links">
       <a href="javascript:;" id="linkFocus" onclick="showView('focus')">📋 每日关注</a>
+      <a href="javascript:;" id="linkHot" onclick="showView('hot')">🔥 热点统计</a>
       <a href="javascript:;" id="btnBack" onclick="showView('radar')">← 返回</a>
       <a href="javascript:;" id="linkAdmin" onclick="showView('admin-login')">⚙ 后台</a>
     </div>
@@ -342,6 +412,29 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   <div class="empty-state hidden" id="focusEmpty">
     <div class="big">🛰️</div>
     <div class="tip">今日暂无情报聚合数据。<br>等每日自动采集完成后，「每日关注」会自动生成当日概览。</div>
+  </div>
+</div>
+
+<!-- ========== 公开页：热点统计 ========== -->
+<div id="view-hot" class="hidden">
+  <div class="focus-bar">
+    <div class="focus-head">
+      <h2>🔥 行业热点统计</h2>
+      <span class="hint" id="hotSub">数字孪生 · 视频融合 行业热度看板</span>
+    </div>
+    <div class="focus-controls">
+      <select id="fHotDate" title="选择快照日期" onchange="HOT_STATE.date=this.value;loadHot();"><option value="">今日</option></select>
+      <button class="btn btn-sm" id="hotRefreshBtn" onclick="hotRefresh()">🔄 刷新</button>
+    </div>
+  </div>
+
+  <div id="hotBody">
+    <div class="loading">热点数据加载中…</div>
+  </div>
+
+  <div class="empty-state hidden" id="hotEmpty">
+    <div class="big">📊</div>
+    <div class="tip">暂无热点统计数据。<br>等每日自动采集完成后，这里会自动生成行业热度看板。</div>
   </div>
 </div>
 
@@ -575,14 +668,15 @@ function api(url, opts){ opts=opts||{}; return fetch(url, opts).then(function(r)
 
 /* ===== 视图切换 ===== */
 function showView(v){
-  ['radar','focus','admin-login','admin'].forEach(function(id){
+  ['radar','focus','hot','admin-login','admin'].forEach(function(id){
     document.getElementById('view-'+id).classList.add('hidden');
   });
   document.getElementById('view-'+v).classList.remove('hidden');
-  document.getElementById('btnBack').style.display = (v==='admin'||v==='admin-login'||v==='focus') ? 'inline-block' : 'none';
+  document.getElementById('btnBack').style.display = (v==='admin'||v==='admin-login'||v==='focus'||v==='hot') ? 'inline-block' : 'none';
   document.getElementById('linkAdmin').style.display = (v==='admin') ? 'none' : 'inline-block';
   if(v==='radar'){ loadAll(); }
   if(v==='focus'){ loadFocus(); }
+  if(v==='hot'){ loadHot(); }
   if(v==='admin-login'){ checkAdminStatus(); }
   if(v==='admin'){ loadAdminPanel(); }
   window.scrollTo(0,0);
@@ -591,6 +685,7 @@ function initRoute(){
   var h = location.hash;
   if(h==='#admin' || h==='#admin-login'){ showView('admin-login'); checkAdminStatus(); }
   else if(h==='#focus'){ showView('focus'); }
+  else if(h==='#hot'){ showView('hot'); }
   else { showView('radar'); }
 }
 
@@ -705,6 +800,246 @@ function focusCard(it){
       +'</div>';
   var media=img?('<div class="card-media">'+img+'</div>'):'';
   return '<div class="intel-card focus-card'+hasImg+'">'+(media?media+body:body)+'</div>';
+}
+
+/* ===== 热点统计看板 ===== */
+var HOT_STATE = { date: '' };
+
+function hotRefresh(){
+  // 触发后台重新聚合当日快照（公开接口，快照本身不含敏感数据）
+  var btn=document.getElementById('hotRefreshBtn');
+  if(btn){ btn.disabled=true; btn.textContent='刷新中…'; }
+  api('/api/hot-stats/refresh', {method:'POST'})
+    .then(function(res){
+      if(res && res.ok){
+        if(btn) btn.textContent='✓ 已刷新';
+        loadHotDates();
+        return loadHotData();
+      }
+      if(btn){ btn.disabled=false; btn.textContent='🔄 手动刷新'; }
+    }).catch(function(){
+      if(btn){ btn.disabled=false; btn.textContent='🔄 手动刷新'; }
+    });
+}
+
+function loadHot(){
+  loadHotDates();
+  loadHotData();
+}
+
+function loadHotDates(){
+  api('/api/hot-stats/dates').then(function(res){
+    if(!res.ok) return;
+    var sel=document.getElementById('fHotDate');
+    var cur=sel.value, seen={};
+    sel.innerHTML='';
+    var dates=res.data||[];
+    var today=todayStr();
+    var ordered=[today].concat(dates.filter(function(d){return d!==today;}).slice(0,29));
+    ordered.forEach(function(d){
+      seen[d]=true;
+      var o=document.createElement('option');
+      o.value=d;
+      o.textContent=(d===today)?'今日 ('+d+')':d;
+      sel.appendChild(o);
+    });
+    if(cur&&seen[cur]){ sel.value=cur; }
+    else if(HOT_STATE.date){ sel.value=HOT_STATE.date; }
+  });
+}
+
+function loadHotData(){
+  var body=document.getElementById('hotBody');
+  var empty=document.getElementById('hotEmpty');
+  body.classList.remove('hidden');
+  empty.classList.add('hidden');
+  body.innerHTML='<div class="loading">热点数据加载中…</div>';
+  api('/api/hot-stats?date='+encodeURIComponent(HOT_STATE.date||'')).then(function(res){
+    if(!res.ok || !res.data){ body.innerHTML=''; empty.classList.remove('hidden'); return; }
+    try {
+      body.innerHTML=renderHot(res.data);
+      document.getElementById('hotSub').textContent='近 '+res.data.window_days+' 天 · '
+        +res.data.window_start+' ~ '+res.data.date+' · 生成于 '+(res.data.generated_at||'');
+    } catch(e){
+      body.innerHTML='<div class="loading">渲染失败：'+esc(e.message||e)+'</div>';
+    }
+  });
+}
+
+function renderHot(d){
+  var ov=d.overview||{};
+  var html='';
+  // KV 总览
+  html+='<div class="hot-kv-grid">'
+    +hotKv('累计情报', ov.total, '全量历史', '')
+    +hotKv('今日新增', ov.today, '近24小时入库', 'green')
+    +hotKv('近7天', ov.last_7d, '本周热点量', 'orange')
+    +hotKv('近30天', ov.last_30d, '高相关 '+ov.high_rel+' 条', 'purple')
+    +'</div>';
+
+  html+='<div class="hot-grid hot-grid-2">';
+  // 30天趋势
+  html+='<div class="hot-card"><h3>📈 近 '+d.window_days+' 天情报趋势 '
+    +'<span class="hint">（蓝色总量 / 橙色高相关）</span></h3>'
+    +renderHotTrend(d.trend_daily||[])+'</div>';
+
+  // 相关度分布
+  html+='<div class="hot-card"><h3>⭐ 相关度分布</h3>'+renderRelDist(d.relevance||[])+'</div>';
+  html+='</div>';
+
+  // 热词云
+  html+='<div class="hot-card" style="margin-bottom:14px;"><h3>🔥 行业热词 Top '+((d.keywords||[]).length)+' '
+    +'<span class="hint">（基于标题+AI摘要，近 '+d.window_days+' 天）</span></h3>'
+    +renderKeywordCloud(d.keywords||[])+'</div>';
+
+  html+='<div class="hot-grid hot-grid-2">';
+  // 厂商 Top
+  html+='<div class="hot-card"><h3>🏢 厂商热度 Top '+((d.vendors||[]).length)+'</h3>'
+    +renderHotBars(d.vendors||[], 'name', 'count', 'blue')+'</div>';
+  // 行业 Top
+  html+='<div class="hot-card"><h3>🏗️ 行业场景热度</h3>'
+    +renderHotBars(d.industries||[], 'name', 'count', 'purple')+'</div>';
+  // 来源 Top
+  html+='<div class="hot-card"><h3>📡 数据来源分布</h3>'
+    +renderHotBars(d.sources||[], 'name', 'count', 'green')+'</div>';
+  // 标签
+  html+='<div class="hot-card"><h3>🏷️ 热门标签</h3>'+renderTagCloud(d.tags||[])+'</div>';
+  html+='</div>';
+
+  // 高相关头条
+  html+='<div class="hot-card" style="margin-bottom:14px;"><h3>🔥 高相关头条 '
+    +'<span class="hint">（近 '+d.window_days+' 天相关度 4-5）</span></h3>'
+    +renderTopArticles(d.top_articles||[])+'</div>';
+
+  return html;
+}
+
+function hotKv(label, val, sub, cls){
+  return '<div class="hot-kv '+(cls||'')+'"><div class="k">'+esc(label)+'</div>'
+    +'<div class="v">'+(val==null?0:val)+'</div>'
+    +(sub?('<div class="sub">'+esc(sub)+'</div>'):'')+'</div>';
+}
+
+function renderHotBars(rows, labelKey, valKey, color){
+  if(!rows.length) return '<div class="empty-mini">暂无数据</div>';
+  var max=0;
+  rows.forEach(function(r){ if(r[valKey]>max) max=r[valKey]; });
+  return rows.map(function(r){
+    var pct=max?Math.round(r[valKey]*100/max):0;
+    return '<div class="hot-bar"><span class="lbl" title="'+esc(r[labelKey])+'">'+esc(r[labelKey])+'</span>'
+      +'<span class="track"><span class="fill '+color+'" style="width:'+pct+'%"></span></span>'
+      +'<span class="num">'+r[valKey]+'</span></div>';
+  }).join('');
+}
+
+function renderKeywordCloud(keywords){
+  if(!keywords.length) return '<div class="empty-mini">暂无数据</div>';
+  var max=keywords[0].count, min=keywords[keywords.length-1].count;
+  return '<div class="keyword-cloud">'+keywords.map(function(k, i){
+    var cls='';
+    // 前 3 热度标红，其他根据量级标 cool
+    if(i<3) cls='hot';
+    else if(k.count<=min+Math.ceil((max-min)/3)) cls='cool';
+    var size=12+Math.round((k.count-min)/(max-min||1)*4);
+    return '<a class="kw '+cls+'" style="font-size:'+size+'px" '
+      +'href="/?q='+encodeURIComponent(k.word)+'" onclick="return jumpKeyword(\''+esc(k.word).replace(/'/g,"\\'")+'\')">'
+      +'<span>'+esc(k.word)+'</span><span class="cnt">'+k.count+'</span></a>';
+  }).join('')+'</div>';
+}
+
+function jumpKeyword(w){
+  showView('radar');
+  var kw=document.getElementById('fKeyword');
+  if(kw){ kw.value=w; kw.dispatchEvent(new Event('input')); }
+  return false;
+}
+
+function renderTagCloud(tags){
+  if(!tags.length) return '<div class="empty-mini">暂无数据</div>';
+  return '<div class="tag-cloud">'+tags.map(function(t){
+    return '<span class="t-chip">'+esc(t.tag)+' · '+t.count+'</span>';
+  }).join('')+'</div>';
+}
+
+function renderRelDist(rel){
+  var total=rel.reduce(function(a,b){return a+(b.count||0);},0);
+  if(!total) return '<div class="empty-mini">暂无数据</div>';
+  return rel.map(function(r){
+    var pct=Math.round(r.count*100/total);
+    var stars='★'.repeat(r.score)+'☆'.repeat(5-r.score);
+    return '<div class="rel-row"><span class="rl">'+stars+'</span>'
+      +'<span class="track"><span class="fill" style="width:'+pct+'%"></span></span>'
+      +'<span class="num">'+r.count+'</span></div>';
+  }).join('');
+}
+
+function renderTopArticles(items){
+  if(!items.length) return '<div class="empty-mini">近期没有相关度 4 分以上的头条</div>';
+  var rankCls=['','r1','r2','r3'];
+  return '<div class="hot-top-list">'+items.map(function(it, i){
+    var rcls=rankCls[i+1]||'';
+    var stars='★'.repeat(it.relevance)+'☆'.repeat(5-it.relevance);
+    var metaBits=[];
+    if(it.vendor) metaBits.push(esc(it.vendor));
+    if(it.industry) metaBits.push(esc(it.industry));
+    if(it.date) metaBits.push(esc(it.date));
+    var link=it.url
+      ? '<a class="hot-top-title" href="'+esc(it.url)+'" target="_blank" rel="noopener">'+esc(it.title)+'</a>'
+      : '<span class="hot-top-title">'+esc(it.title)+'</span>';
+    return '<div class="hot-top-item"><span class="hot-rank '+rcls+'">'+(i+1)+'</span>'
+      +'<div class="hot-top-body">'+link
+      +'<div class="hot-top-meta"><span class="stars">'+stars+'</span>'
+      +metaBits.map(function(m){return '<span>'+m+'</span>';}).join('')+'</div>'
+      +(it.summary?'<div class="hot-top-summary">'+esc(it.summary)+'</div>':'')
+      +'</div></div>';
+  }).join('')+'</div>';
+}
+
+function renderHotTrend(daily){
+  if(!daily.length) return '<div class="empty-mini">暂无数据</div>';
+  var W=600, H=180, PAD=30;
+  var max=0, hiMax=0;
+  daily.forEach(function(d){
+    if(d.count>max) max=d.count;
+    if(d.high_rel>hiMax) hiMax=d.high_rel;
+  });
+  if(!max) max=1;
+  var n=daily.length;
+  var xStep=(W-PAD*2)/(n-1||1);
+  var yScale=function(v){ return H-PAD- (v/max)*(H-PAD*2); };
+  var pts=daily.map(function(d,i){ return [PAD+i*xStep, yScale(d.count)]; });
+  var linePts=pts.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ');
+  var areaPts=PAD+','+(H-PAD)+' '+linePts+' '+(PAD+(n-1)*xStep)+','+(H-PAD);
+  // 网格 4 条
+  var grid='';
+  for(var i=0;i<4;i++){
+    var y=PAD+ (i)*(H-PAD*2)/3;
+    grid+='<line class="grid" x1="'+PAD+'" y1="'+y.toFixed(1)+'" x2="'+(W-PAD)+'" y2="'+y.toFixed(1)+'"/>';
+  }
+  // X 轴日期：每 5 个显示一个
+  var axis='';
+  daily.forEach(function(d,i){
+    if(n>10 && i%Math.ceil(n/6)!==0 && i!==n-1) return;
+    var x=PAD+i*xStep;
+    axis+='<text class="axis" x="'+x.toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle">'+d.date.slice(5)+'</text>';
+  });
+  // 高相关柱（窄柱）
+  var barW=Math.max(2, xStep*0.35);
+  var bars=daily.map(function(d,i){
+    if(!d.high_rel) return '';
+    var x=PAD+i*xStep-barW/2;
+    var h=(d.high_rel/(hiMax||1))*(H-PAD*2)*0.5;
+    return '<rect class="bar-hi" x="'+x.toFixed(1)+'" y="'+(H-PAD-h).toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1"><title>'+d.date+': '+d.high_rel+' 条高相关</title></rect>';
+  }).join('');
+  var dots=pts.map(function(p,i){
+    return '<circle class="dot" cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="1.8"><title>'+daily[i].date+': '+daily[i].count+' 条</title></circle>';
+  }).join('');
+  return '<svg class="trend-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
+    +'<defs><linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0%" stop-color="#58a6ff" stop-opacity="0.35"/>'
+    +'<stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/></linearGradient></defs>'
+    +grid+bars+'<polygon class="area" points="'+areaPts+'"/>'
+    +'<polyline class="line" points="'+linePts+'"/>'+dots+axis+'</svg>';
 }
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }

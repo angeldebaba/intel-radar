@@ -1310,6 +1310,104 @@ def fetch_all_official(max_per_vendor=6):
     return _dedup_by_url(all_items)
 
 
+# ==================== RSS / Atom 直采（行业媒体） ====================
+
+def _feed_entry_text(entry, *keys):
+    """从 feedparser entry 中按候选字段名取首个非空字符串"""
+    for k in keys:
+        v = entry.get(k)
+        if not v:
+            continue
+        if isinstance(v, str):
+            return v.strip()
+        # 某些字段是 {'value': '...'} 结构
+        if isinstance(v, dict) and v.get('value'):
+            return str(v['value']).strip()
+        if isinstance(v, list) and v:
+            first = v[0]
+            if isinstance(first, dict) and first.get('value'):
+                return str(first['value']).strip()
+            if isinstance(first, str):
+                return first.strip()
+    return ''
+
+
+def fetch_rss_source(src, max_results=None):
+    """采集单个 RSS/Atom 源，按 keywords 过滤后返回标准 items。
+
+    src: {'name','url','vendor','keywords'}
+    返回: [{'title','url','summary','source','published','vendor'}]
+    """
+    import feedparser
+    if max_results is None:
+        max_results = config.RSS_MAX_PER_SOURCE
+    items = []
+    try:
+        # feedparser 原生支持 ETag/Modified 条件请求；不传也不会出错
+        resp = _request_get(src['url'], timeout=15, retries=1)
+        if not resp:
+            database.log('collect', 'RSS 抓取失败[{}]: HTTP 无响应'.format(src['name']), 'warn')
+            return items
+        feed = feedparser.parse(resp.content)
+    except Exception as e:
+        database.log('collect', 'RSS 抓取异常[{}]: {}'.format(src['name'], e), 'warn')
+        return items
+
+    keywords = src.get('keywords') or []
+    bozo = bool(getattr(feed, 'bozo', 0))
+    entries = getattr(feed, 'entries', []) or []
+    kept = 0
+    for ent in entries:
+        title = _clean_text(_feed_entry_text(ent, 'title'))
+        link = (ent.get('link') or '').strip()
+        if not title or not link:
+            continue
+        summary = _clean_text(_feed_entry_text(ent, 'summary', 'description'))
+        # 去 HTML
+        if summary and '<' in summary:
+            try:
+                summary = _clean_text(BeautifulSoup(summary, 'html.parser').get_text(' '))
+            except Exception:
+                summary = re.sub(r'<[^>]+>', '', summary)
+        text = (title + ' ' + summary).lower()
+        if keywords and not any(kw.lower() in text for kw in keywords):
+            continue
+        # 发布时间
+        published = ''
+        for tk in ('published', 'updated', 'created'):
+            v = ent.get(tk)
+            if v:
+                published = _norm_date(_extract_date(str(v))) or _extract_date(str(v))
+                if published:
+                    break
+        items.append({
+            'title': title,
+            'url': link,
+            'summary': summary[:300] if summary else title,
+            'source': src['name'],
+            'published': published,
+            'vendor': src.get('vendor', ''),
+        })
+        kept += 1
+        if kept >= max_results:
+            break
+    database.log('collect', 'RSS[{}] 条目{} 关键词命中{}条{}'.format(
+        src['name'], len(entries), len(items), ' 解析异常' if bozo else ''), 'ok')
+    return items
+
+
+def fetch_all_rss():
+    """采集 config.RSS_SOURCES 中配置的所有行业媒体源，合并去重"""
+    all_items = []
+    for src in config.RSS_SOURCES:
+        try:
+            all_items.extend(fetch_rss_source(src))
+        except Exception as e:
+            database.log('collect', 'RSS 源失败[{}]: {}'.format(src.get('name'), e), 'warn')
+        time.sleep(random.uniform(0.5, 1.2))
+    return _dedup_by_url(all_items)
+
+
 # ==================== 聚合采集逻辑 ====================
 
 def _dedup_by_url(items):
@@ -1552,13 +1650,19 @@ def collect_once():
 
     # 任务分组：
     # 阶段 A：先抓所有配置厂商的官网（主源）
-    # 阶段 B：再用搜索引擎补充行业/厂商关键词
+    # 阶段 B：再用搜索引擎补充厂商关键词
+    # 阶段 C：搜索引擎补充行业/政策/热点关键词
+    # 阶段 D：行业媒体 / 公众号品牌词搜索（覆盖微信公众号、行业媒体）
+    # 阶段 E：RSS 直采（稳定 feed，关键词过滤）
     vendor_queries = []
     for vendor in config.VENDORS:
         for kw in vendor['keywords']:
             vendor_queries.append((vendor['name'], kw))
     industry_queries = [(q, '') for q in config.INDUSTRY_QUERIES]
-    total_steps = len(OFFICIAL_CONFIG) + len(vendor_queries) + len(industry_queries)
+    media_queries = [(q, '') for q in getattr(config, 'INDUSTRY_MEDIA_QUERIES', [])]
+    rss_sources = list(getattr(config, 'RSS_SOURCES', []) or [])
+    total_steps = (len(OFFICIAL_CONFIG) + len(vendor_queries) + len(industry_queries)
+                   + len(media_queries) + len(rss_sources))
 
     _update_progress(running=True, total=total_steps, done=0, added=0,
                      errors=0, current='', finished_at='')
@@ -1733,6 +1837,31 @@ def collect_once():
             errors += 1
             database.log('collect', '查询失败: {} | {}'.format(query, e), 'warn')
         time.sleep(random.uniform(2.0, 3.5))
+
+    # 阶段 D：行业媒体 / 公众号品牌词搜索（覆盖微信公众号、泰伯网/36氪/智东西等媒体）
+    for query, _ in media_queries:
+        _update_progress(done=step, current='媒体: ' + query)
+        step += 1
+        try:
+            items = fetch_query(query, vendor_name='', max_results=config.MAX_PER_QUERY,
+                                use_official=False, use_search=True)
+            _add_items(items, '')
+        except Exception as e:
+            errors += 1
+            database.log('collect', '媒体查询失败: {} | {}'.format(query, e), 'warn')
+        time.sleep(random.uniform(2.0, 3.5))
+
+    # 阶段 E：行业媒体 RSS 直采（关键词过滤；单源失败不影响整体）
+    for src in rss_sources:
+        _update_progress(done=step, current='RSS: ' + src.get('name', ''))
+        step += 1
+        try:
+            items = fetch_rss_source(src)
+            _add_items(items, src.get('vendor', ''))
+        except Exception as e:
+            errors += 1
+            database.log('collect', 'RSS 采集失败: {} | {}'.format(src.get('name'), e), 'warn')
+        time.sleep(random.uniform(0.8, 1.5))
 
     # 保留期清理：默认 90 天（后台可配），连带清理关联存档
     try:

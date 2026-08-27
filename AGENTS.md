@@ -39,12 +39,13 @@
 
 ```
 intel-radar/
-├── app.py              # Flask 主应用（~1460 行）：路由 / 鉴权 / 调度 / 竞品分析
-├── collector.py        # 采集器（~1760 行）：官网 + 搜索引擎抓取 / 媒体提取 / 质量门禁
+├── app.py              # Flask 主应用（~1500 行）：路由 / 鉴权 / 调度 / 竞品分析
+├── collector.py        # 采集器（~1890 行）：官网 + 搜索引擎 + RSS + 公众号品牌词抓取 / 媒体提取 / 质量门禁
 ├── database.py         # 数据层（~570 行）：SQLite & PG 双兼容、自动迁移、备份
 ├── ai.py               # AI 提炼（~180 行）：批量调用 + 降级 + 短摘要重试
-├── pusher.py           # 微信 PushPlus 推送
 ├── daily_focus.py      # 公开页"每日关注"五维度聚合快照
+├── hot_stats.py        # 公开页"🔥 热点统计"看板：30 天趋势 / 热词 / 厂商-行业-来源分布 / 相关度 / 头条
+├── pusher.py           # 微信 PushPlus 推送
 ├── config.py           # 全局配置：厂商/行业/关键词/阈值，全部可被环境变量覆盖
 ├── templates/
 │   └── index.html      # 唯一前端页面（~1600 行，内嵌 JS/CSS）
@@ -146,10 +147,11 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 
 ### `collector.py`
 
-- `OFFICIAL_CONFIG`：**9 家**厂商官网新闻/方案页清单（注意 VENDORS 有 12 家，部分厂商只走搜索引擎，如腾讯云/阿里云/百度智能云）
+- `OFFICIAL_CONFIG`：**9 家**厂商官网新闻/方案页清单（VENDORS 有 12 家，部分厂商只走搜索引擎）
 - `fetch_official_page` → `_parse_structured_list` / `_parse_generic_links`：通用列表页解析
 - 搜索引擎：`fetch_sogou_web` / `fetch_bing` / `fetch_baidu_news`，每个引擎都有 `_engine_blocked` 节流（被反爬自动跳过）
-- `collect_once()`：主编排，顺序是 官网 → 厂商×关键词搜索 → 行业专项搜索；全局按 URL 去重
+- `fetch_rss_source` / `fetch_all_rss`：行业媒体 RSS/Atom 直采（feedparser），按 `config.RSS_SOURCES` 关键词过滤
+- `collect_once()`：主编排，五阶段顺序执行——A. 官网 → B. 厂商×关键词搜索 → C. 行业专项搜索 → D. 行业媒体/公众号品牌词搜索 → E. RSS 直采；全局按 URL 去重
 - `quality_verdict()`：内容质量门禁，不过的进 `quarantine` 表（不直接丢）
 - `_enrich_article_media`：抓原文页提取 og:image / 视频 / 正文外链追溯
 - AI 调用在 collector 中分批走 `ai.analyze_batch()`，低于 `AI_MIN_SCORE` 丢弃
@@ -173,6 +175,15 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 
 - 把当日情报按五维度（行业动态 / 产品 / 技术 / 市场 / 关注点）归并，生成快照存 `config` 表
 - 每晚采集后由 `job_collect` 触发；后台也可手动刷新
+
+### `hot_stats.py`
+
+- 数字孪生行业热点统计看板的聚合层，每晚采集后由 `job_collect` 调用 `generate_today()` 写入快照
+- `build_stats(days=30)`：实时聚合——总览 KPI、30 天趋势、厂商 / 行业 / 来源分布、相关度分布、标签云、领域热词（`DOMAIN_TERMS` 加权）、高相关头条
+- `save_snapshot` / `load_snapshot` / `list_snapshot_dates`：快照走 `config` 表，key 形如 `hot_stats:YYYY-MM-DD`，值为 JSON
+- `GET /api/hot-stats`：默认返回今日快照；若今日尚无快照则实时聚合并回填缓存，保证冷启动不空白
+- 公开接口**不加鉴权**（快照本身不含敏感数据）；`POST /api/hot-stats/refresh` 允许任何访客触发重建，如需收紧可加 `@require_admin`
+- 前端入口：顶部导航「🔥 热点统计」，hash 路由 `#hot`，DOM 容器 `#view-hot` / `#hotBody`，渲染函数 `renderHot()` 在 `templates/index.html`
 
 ### 前端 `templates/index.html`
 
@@ -198,6 +209,9 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 | GET | `/api/dates` | 有数据的日期列表 |
 | GET | `/api/daily-focus` | 每日关注聚合（当日） |
 | GET | `/api/daily-focus/dates` | 每日关注快照日期 |
+| GET | `/api/hot-stats` | 行业热点统计看板（默认今日快照；无快照时实时聚合） |
+| POST | `/api/hot-stats/refresh` | 手动重建当日热点统计快照（公开接口） |
+| GET | `/api/hot-stats/dates` | 热点统计快照日期列表 |
 | POST | `/api/favorite/<id>` | 收藏切换 |
 | POST | `/api/track` | 访问埋点 |
 
@@ -226,7 +240,7 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 - `article_archive` — 原文全文存档（HTML + plain_text，按 intel_id 关联）
 - `dahua_features` — 大华平台功能清单
 - `quarantine` — 质量门禁隔离区
-- `config` — KV 配置（定时时间、PushPlus token、锁、config_version 等）
+- `config` — KV 配置（定时时间、PushPlus token、锁、config_version、`daily_focus:YYYY-MM-DD`、`hot_stats:YYYY-MM-DD` 等快照）
 - `collect_log` — 采集/推送日志（后台"运行日志"）
 - `visit_log` / `visit_session` / `visit_daily` — 访问统计三层（明细 / 会话 / 日聚合）
 

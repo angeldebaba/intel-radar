@@ -24,6 +24,7 @@ import collector
 import pusher
 import ai
 import daily_focus
+import hot_stats
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -596,6 +597,56 @@ def api_daily_focus_dates():
     rows = database.query(
         "SELECT key FROM config WHERE key LIKE 'daily_focus:%' ORDER BY key DESC")
     dates = [r['key'].split(':', 1)[1] for r in rows]
+    return jsonify({'ok': True, 'data': dates})
+
+
+# ==================== 热点统计看板 ====================
+@app.route('/api/hot-stats')
+def api_hot_stats():
+    """数字孪生行业热点统计看板数据。
+
+    参数：
+        date: 快照日期 YYYY-MM-DD（缺省今天，读缓存快照；无快照则实时聚合）
+        refresh: 1 强制重新生成快照（需管理员登录）
+    """
+    date_str = (request.args.get('date') or '').strip()
+    refresh = request.args.get('refresh') == '1'
+    if refresh:
+        if not session.get('admin'):
+            return jsonify({'ok': False, 'error': '未授权'}), 401
+        data = hot_stats.save_snapshot(date_str or None)
+        database.log('system', '手动刷新热点统计快照: {}'.format(data['date']))
+        return jsonify({'ok': True, 'date': data['date'],
+                        'generated_at': data.get('generated_at'), 'data': data})
+    data = hot_stats.load_snapshot(date_str) if date_str else None
+    if not data:
+        # 今日尚无快照：实时聚合一份，并写入缓存（冷启动/首日场景）
+        data = hot_stats.build_stats()
+        try:
+            database.set_config(hot_stats.cache_key(data['date']),
+                                json.dumps(data, ensure_ascii=False))
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'date': data['date'],
+                    'generated_at': data.get('generated_at'), 'data': data})
+
+
+@app.route('/api/hot-stats/refresh', methods=['POST'])
+def api_hot_stats_refresh():
+    """手动触发当日热点统计快照刷新（公开接口，快照本身不含敏感数据）。"""
+    try:
+        data = hot_stats.save_snapshot()
+        database.log('system', '手动刷新热点统计快照: {}'.format(data['date']))
+        return jsonify({'ok': True, 'date': data['date'],
+                        'generated_at': data.get('generated_at'), 'data': data})
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': '刷新失败: {}'.format(exc)}), 500
+
+
+@app.route('/api/hot-stats/dates')
+def api_hot_stats_dates():
+    """返回有热点统计快照的日期（倒序，最多30条）"""
+    dates = hot_stats.list_snapshot_dates(limit=30)
     return jsonify({'ok': True, 'data': dates})
 
 
@@ -1427,6 +1478,11 @@ def job_collect():
             database.log('system', '每日关注快照已生成: {} @ {}'.format(d, ts))
         except Exception as e:
             database.log('system', '每日关注快照生成失败: {}'.format(e), status='error')
+        try:
+            d, ts = hot_stats.generate_today()
+            database.log('system', '热点统计快照已生成: {} @ {}'.format(d, ts))
+        except Exception as e:
+            database.log('system', '热点统计快照生成失败: {}'.format(e), status='error')
 
 
 def job_push():
