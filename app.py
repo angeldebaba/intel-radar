@@ -25,6 +25,7 @@ import pusher
 import ai
 import daily_focus
 import hot_stats
+import industry_overview
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -648,6 +649,45 @@ def api_hot_stats_dates():
     """返回有热点统计快照的日期（倒序，最多30条）"""
     dates = hot_stats.list_snapshot_dates(limit=30)
     return jsonify({'ok': True, 'data': dates})
+
+
+# ==================== 行业全局观察（行业研究视角） ====================
+@app.route('/api/industry-overview')
+def api_industry_overview():
+    """行业全局看板：市场规模、技术趋势、应用分布、区域格局、竞争、风险、未来展望。
+
+    数据来自打包快照 + 数据库中的 industry_overview:YYYY 覆盖（可由后台或 AI 写入）。
+    与已抓取情报解耦，体现行业全局视角。
+    """
+    date_str = request.args.get('date')
+    data = industry_overview.get_snapshot(date_str)
+    date_out = data.pop('_date', None)
+    source = data.pop('_source', 'default')
+    return jsonify({
+        'ok': True,
+        'date': date_out,
+        'source': source,
+        'data': data,
+    })
+
+
+@app.route('/api/industry-overview/dates')
+def api_industry_overview_dates():
+    dates = industry_overview.list_snapshot_dates(limit=30)
+    return jsonify({'ok': True, 'data': dates})
+
+
+@app.route('/api/admin/industry-overview', methods=['POST'])
+@require_admin
+def api_admin_industry_overview_save():
+    """后台写入新版行业观察快照（JSON）。"""
+    body = request.get_json(silent=True) or {}
+    date_str = (body.get('date') or '').strip()
+    payload = body.get('data')
+    if not isinstance(payload, dict):
+        return jsonify({'ok': False, 'error': 'data 必须是对象'}), 400
+    saved = industry_overview.save_snapshot(payload, date_str or None)
+    return jsonify({'ok': True, 'date': saved})
 
 
 @app.route('/api/favorite/<int:iid>', methods=['POST'])
@@ -1483,6 +1523,12 @@ def job_collect():
             database.log('system', '热点统计快照已生成: {} @ {}'.format(d, ts))
         except Exception as e:
             database.log('system', '热点统计快照生成失败: {}'.format(e), status='error')
+        try:
+            d = industry_overview.generate_today()
+            if d:
+                database.log('system', '行业观察快照已就绪: {}'.format(d))
+        except Exception as e:
+            database.log('system', '行业观察快照生成失败: {}'.format(e), status='error')
 
 
 def job_push():

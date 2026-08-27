@@ -336,6 +336,175 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 .rel-row .track{flex:1;background:var(--bg3);border-radius:4px;height:18px;overflow:hidden;}
 .rel-row .fill{height:100%;border-radius:4px;background:linear-gradient(90deg,rgba(240,160,32,.6),#f0a020);}
 .rel-row .num{font-size:11.5px;color:var(--text2);width:40px;flex-shrink:0;text-align:right;}
+
+/* ===== 行业观察（全局视角） ===== */
+.industry-hero{
+  background:
+    radial-gradient(circle at 20% 20%, rgba(88,166,255,.22), transparent 55%),
+    radial-gradient(circle at 80% 30%, rgba(188,140,255,.18), transparent 55%),
+    radial-gradient(circle at 50% 90%, rgba(57,197,207,.12), transparent 60%),
+    linear-gradient(180deg, #0b1424 0%, #0a1320 100%);
+  border-bottom:1px solid var(--border);
+  padding:38px 0 30px;
+}
+.industry-hero-inner{max-width:1180px;margin:0 auto;padding:0 20px;text-align:center;}
+.industry-badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;color:#9ecbff;
+  background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.3);margin-bottom:14px;}
+.industry-title{
+  font-size:34px;font-weight:800;letter-spacing:2px;
+  background:linear-gradient(90deg,#9ecbff 0%,#cba8ff 50%,#5dd3db 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  margin:0 0 10px;
+}
+.industry-sub{font-size:14px;color:var(--text2);max-width:720px;margin:0 auto 14px;line-height:1.7;}
+.industry-meta{font-size:11.5px;color:var(--text3);display:flex;gap:14px;justify-content:center;flex-wrap:wrap;}
+.industry-meta span{display:inline-flex;align-items:center;gap:4px;}
+
+.industry-wrap{max-width:1180px;margin:0 auto;padding:22px 20px 50px;}
+
+.ind-section{margin-bottom:30px;}
+.ind-section-head{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+.ind-section-head .ico{
+  width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,rgba(88,166,255,.25),rgba(188,140,255,.25));font-size:14px;
+}
+.ind-section-head h2{font-size:17px;font-weight:700;color:var(--text);margin:0;letter-spacing:.5px;}
+.ind-section-head .hint{font-size:12px;color:var(--text3);margin-left:6px;}
+
+.ind-kv-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+@media(min-width:768px){.ind-kv-grid{grid-template-columns:repeat(4,1fr);}}
+@media(min-width:1024px){.ind-kv-grid.compact{grid-template-columns:repeat(6,1fr);}}
+.ind-kv{
+  background:linear-gradient(160deg,rgba(20,32,52,.85),rgba(15,24,40,.85));
+  border:1px solid var(--border);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;
+}
+.ind-kv::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c,#58a6ff);}
+.ind-kv .k{font-size:11.5px;color:var(--text3);}
+.ind-kv .v{font-size:24px;font-weight:800;color:var(--text);margin-top:4px;font-variant-numeric:tabular-nums;line-height:1.1;}
+.ind-kv .v small{font-size:12px;font-weight:500;color:var(--text2);margin-left:3px;}
+.ind-kv .delta{font-size:11px;margin-top:4px;color:#3fb950;}
+.ind-kv .delta.down{color:#f85149;}
+.ind-kv .delta.neutral{color:var(--text3);}
+.ind-kv .note{font-size:10.5px;color:var(--text3);margin-top:6px;line-height:1.4;}
+
+.ind-grid-2{display:grid;grid-template-columns:1fr;gap:14px;}
+@media(min-width:900px){.ind-grid-2{grid-template-columns:1fr 1fr;}}
+.ind-card{
+  background:linear-gradient(160deg,rgba(20,32,52,.7),rgba(15,24,40,.7));
+  border:1px solid var(--border);border-radius:14px;padding:16px 18px;
+}
+.ind-card h3{font-size:13.5px;color:var(--text);font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:6px;}
+.ind-card .sub{font-size:11px;color:var(--text3);font-weight:400;margin-left:auto;}
+
+/* 横向柱状条 */
+.ind-bar{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.ind-bar .lbl{width:110px;font-size:12.5px;color:var(--text2);flex-shrink:0;}
+.ind-bar .track{flex:1;background:rgba(255,255,255,.04);border-radius:5px;height:18px;overflow:hidden;position:relative;}
+.ind-bar .fill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--c,#58a6ff),rgba(88,166,255,.5));}
+.ind-bar .val{font-size:12px;color:var(--text);font-weight:600;width:64px;flex-shrink:0;text-align:right;font-variant-numeric:tabular-nums;}
+
+/* 技术三次迁移时间线 */
+.tech-shift-row{display:grid;grid-template-columns:1fr;gap:12px;}
+@media(min-width:900px){.tech-shift-row{grid-template-columns:1fr 1fr 1fr;}}
+.tech-shift{
+  background:linear-gradient(160deg,rgba(20,32,52,.8),rgba(15,24,40,.8));
+  border:1px solid var(--border);border-radius:12px;padding:14px 16px;border-top:3px solid var(--c,#58a6ff);
+}
+.tech-shift .era{font-size:11px;color:var(--c,#58a6ff);font-weight:600;letter-spacing:.5px;}
+.tech-shift .title{font-size:17px;font-weight:700;color:var(--text);margin:4px 0 6px;}
+.tech-shift .desc{font-size:12.5px;color:var(--text2);line-height:1.6;}
+
+/* 技术突破卡片 */
+.break-grid{display:grid;grid-template-columns:1fr;gap:12px;}
+@media(min-width:680px){.break-grid{grid-template-columns:1fr 1fr;}}
+@media(min-width:1024px){.break-grid{grid-template-columns:repeat(4,1fr);}}
+.break-card{
+  background:linear-gradient(160deg,rgba(20,32,52,.8),rgba(15,24,40,.8));
+  border:1px solid var(--border);border-radius:12px;padding:16px;position:relative;overflow:hidden;
+}
+.break-card .b-icon{
+  width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;
+  background:linear-gradient(135deg,rgba(88,166,255,.2),rgba(188,140,255,.2));margin-bottom:10px;
+}
+.break-card .b-title{font-size:15px;font-weight:700;color:var(--text);}
+.break-card .b-tag{font-size:11px;color:#9ecbff;margin-top:2px;}
+.break-card .b-desc{font-size:12px;color:var(--text2);line-height:1.6;margin:8px 0 10px;}
+.break-card .b-tags{display:flex;flex-wrap:wrap;gap:5px;}
+.break-card .b-tags span{font-size:10.5px;padding:2px 8px;border-radius:10px;background:rgba(88,166,255,.1);color:#9ecbff;border:1px solid rgba(88,166,255,.2);}
+
+/* 应用分布 - 数字格子 */
+.app-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media(min-width:680px){.app-grid{grid-template-columns:repeat(4,1fr);}}
+.app-tile{
+  background:linear-gradient(160deg,rgba(20,32,52,.8),rgba(15,24,40,.8));
+  border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;
+}
+.app-tile .ico{font-size:24px;margin-bottom:6px;}
+.app-tile .name{font-size:12.5px;color:var(--text2);}
+.app-tile .val{font-size:22px;font-weight:800;color:var(--c,#58a6ff);margin-top:4px;font-variant-numeric:tabular-nums;}
+.app-tile .val small{font-size:11px;color:var(--text3);margin-left:1px;}
+
+.vert-list{display:flex;flex-direction:column;gap:8px;}
+.vert-item{
+  display:flex;justify-content:space-between;gap:10px;padding:8px 12px;background:rgba(255,255,255,.02);
+  border:1px solid var(--border);border-radius:8px;
+}
+.vert-item .v-name{font-size:12.5px;color:var(--text);}
+.vert-item .v-rate{font-size:11.5px;color:#3fb950;font-weight:600;white-space:nowrap;}
+.vert-item .v-desc{font-size:11px;color:var(--text3);margin-top:2px;}
+
+/* 区域 */
+.region-rank{display:flex;flex-direction:column;gap:8px;}
+.region-row{display:flex;align-items:center;gap:10px;}
+.region-row .rk{width:22px;height:22px;border-radius:6px;background:rgba(88,166,255,.15);color:#9ecbff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
+.region-row .rk.top1{background:rgba(188,140,255,.2);color:#cba8ff;}
+.region-row .nm{width:54px;font-size:13px;color:var(--text);flex-shrink:0;}
+.region-row .track{flex:1;background:rgba(255,255,255,.04);border-radius:4px;height:12px;overflow:hidden;}
+.region-row .fill{height:100%;background:linear-gradient(90deg,var(--c,#58a6ff),rgba(88,166,255,.4));border-radius:4px;}
+.region-row .pct{font-size:12px;color:var(--text2);width:46px;text-align:right;font-variant-numeric:tabular-nums;}
+.region-row .tag{font-size:10px;color:var(--text3);width:30px;}
+
+.tier-row{display:flex;gap:10px;align-items:flex-end;margin:12px 0 6px;height:140px;padding:0 6px;border-bottom:1px dashed var(--border);}
+.tier-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;}
+.tier-bar{width:100%;max-width:120px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,var(--c),rgba(255,255,255,.08));position:relative;}
+.tier-bar .v{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.tier-lbl{font-size:11.5px;color:var(--text2);}
+
+/* 竞争 */
+.comp-logos{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+.comp-logo{padding:5px 11px;font-size:12px;color:var(--text);background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;}
+.comp-logo.cn{background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.25);color:#ff9a93;}
+
+.seg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media(min-width:768px){.seg-grid{grid-template-columns:repeat(4,1fr);}}
+.seg-tile{background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:10px;padding:12px;border-left:3px solid var(--c,#58a6ff);}
+.seg-tile .si{font-size:18px;margin-bottom:4px;}
+.seg-tile .sn{font-size:13px;font-weight:700;color:var(--text);}
+.seg-tile .sd{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.5;}
+
+/* 挑战 */
+.risk-list{display:grid;grid-template-columns:1fr;gap:10px;}
+@media(min-width:768px){.risk-list{grid-template-columns:1fr 1fr;}}
+.risk-item{display:flex;gap:12px;padding:12px 14px;background:linear-gradient(160deg,rgba(20,32,52,.6),rgba(15,24,40,.6));border:1px solid var(--border);border-radius:10px;border-left:3px solid var(--c,#f85149);}
+.risk-item .ri{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;background:rgba(255,255,255,.05);}
+.risk-item .rt{font-size:13.5px;font-weight:700;color:var(--text);}
+.risk-item .rd{font-size:12px;color:var(--text2);line-height:1.6;margin-top:4px;}
+
+/* 未来趋势 */
+.future-grid{display:grid;grid-template-columns:1fr;gap:12px;}
+@media(min-width:680px){.future-grid{grid-template-columns:1fr 1fr;}}
+@media(min-width:1024px){.future-grid{grid-template-columns:repeat(3,1fr);}}
+.future-card{
+  background:linear-gradient(160deg,rgba(20,32,52,.8),rgba(15,24,40,.8));
+  border:1px solid var(--border);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;
+}
+.future-card::after{content:"";position:absolute;right:-30px;top:-30px;width:90px;height:90px;border-radius:50%;background:var(--c,#58a6ff);opacity:.07;}
+.future-card .fid{font-size:11px;font-weight:800;letter-spacing:1px;color:var(--c,#58a6ff);}
+.future-card .ft{font-size:14px;font-weight:700;color:var(--text);margin:6px 0;}
+.future-card .fd{font-size:12px;color:var(--text2);line-height:1.6;}
+
+.ind-footer{margin-top:24px;padding-top:16px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text3);line-height:1.7;}
+.ind-footer strong{color:var(--text2);font-weight:600;}
 </style>
 </head>
 <body>
@@ -345,7 +514,8 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <div class="topbar-spacer"></div>
     <div class="topbar-links">
       <a href="javascript:;" id="linkFocus" onclick="showView('focus')">📋 每日关注</a>
-      <a href="javascript:;" id="linkHot" onclick="showView('hot')">🔥 热点统计</a>
+      <a href="javascript:;" id="linkHot" onclick="showView('hot')">📊 情报看板</a>
+      <a href="javascript:;" id="linkIndustry" onclick="showView('industry')">🌐 行业观察</a>
       <a href="javascript:;" id="btnBack" onclick="showView('radar')">← 返回</a>
       <a href="javascript:;" id="linkAdmin" onclick="showView('admin-login')">⚙ 后台</a>
     </div>
@@ -415,12 +585,12 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   </div>
 </div>
 
-<!-- ========== 公开页：热点统计 ========== -->
+<!-- ========== 公开页：情报看板（内部抓取数据热度） ========== -->
 <div id="view-hot" class="hidden">
   <div class="focus-bar">
     <div class="focus-head">
-      <h2>🔥 行业热点统计</h2>
-      <span class="hint" id="hotSub">数字孪生 · 视频融合 行业热度看板</span>
+      <h2>📊 情报看板</h2>
+      <span class="hint" id="hotSub">基于本站抓取情报的热度分布与趋势</span>
     </div>
     <div class="focus-controls">
       <select id="fHotDate" title="选择快照日期" onchange="HOT_STATE.date=this.value;loadHot();"><option value="">今日</option></select>
@@ -429,12 +599,29 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   </div>
 
   <div id="hotBody">
-    <div class="loading">热点数据加载中…</div>
+    <div class="loading">情报看板加载中…</div>
   </div>
 
   <div class="empty-state hidden" id="hotEmpty">
     <div class="big">📊</div>
-    <div class="tip">暂无热点统计数据。<br>等每日自动采集完成后，这里会自动生成行业热度看板。</div>
+    <div class="tip">暂无情报看板数据。<br>等每日自动采集完成后，这里会自动生成情报热度看板。</div>
+  </div>
+</div>
+
+
+<!-- ========== 公开页：行业观察（行业全局视角） ========== -->
+<div id="view-industry" class="hidden">
+  <div class="industry-hero">
+    <div class="industry-hero-inner">
+      <div class="industry-badge" id="indBadge">2025-2026 行业观察</div>
+      <h1 class="industry-title">数字孪生热点信息统计</h1>
+      <p class="industry-sub">从可视化大屏到智能决策 —— AI、视频孪生、5G-A 正在让数字孪生从"看得见"走向"算得准、控得住"</p>
+      <div class="industry-meta" id="indMeta"></div>
+    </div>
+  </div>
+
+  <div class="industry-wrap" id="industryBody">
+    <div class="loading">行业观察数据加载中…</div>
   </div>
 </div>
 
@@ -668,15 +855,16 @@ function api(url, opts){ opts=opts||{}; return fetch(url, opts).then(function(r)
 
 /* ===== 视图切换 ===== */
 function showView(v){
-  ['radar','focus','hot','admin-login','admin'].forEach(function(id){
+  ['radar','focus','hot','industry','admin-login','admin'].forEach(function(id){
     document.getElementById('view-'+id).classList.add('hidden');
   });
   document.getElementById('view-'+v).classList.remove('hidden');
-  document.getElementById('btnBack').style.display = (v==='admin'||v==='admin-login'||v==='focus'||v==='hot') ? 'inline-block' : 'none';
+  document.getElementById('btnBack').style.display = (v==='admin'||v==='admin-login'||v==='focus'||v==='hot'||v==='industry') ? 'inline-block' : 'none';
   document.getElementById('linkAdmin').style.display = (v==='admin') ? 'none' : 'inline-block';
   if(v==='radar'){ loadAll(); }
   if(v==='focus'){ loadFocus(); }
   if(v==='hot'){ loadHot(); }
+  if(v==='industry'){ loadIndustry(); }
   if(v==='admin-login'){ checkAdminStatus(); }
   if(v==='admin'){ loadAdminPanel(); }
   window.scrollTo(0,0);
@@ -686,6 +874,7 @@ function initRoute(){
   if(h==='#admin' || h==='#admin-login'){ showView('admin-login'); checkAdminStatus(); }
   else if(h==='#focus'){ showView('focus'); }
   else if(h==='#hot'){ showView('hot'); }
+  else if(h==='#industry'){ showView('industry'); }
   else { showView('radar'); }
 }
 
@@ -1040,6 +1229,198 @@ function renderHotTrend(daily){
     +'<stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/></linearGradient></defs>'
     +grid+bars+'<polygon class="area" points="'+areaPts+'"/>'
     +'<polyline class="line" points="'+linePts+'"/>'+dots+axis+'</svg>';
+}
+
+/* ===== 行业观察（全局视角） ===== */
+var IND_STATE = { loaded:false, date:'', data:null };
+function loadIndustry(){
+  if(IND_STATE.loaded){ return; }
+  var body=document.getElementById('industryBody');
+  body.innerHTML='<div class="loading">行业观察数据加载中…</div>';
+  api('/api/industry-overview').then(function(j){
+    if(j && j.ok && j.data){
+      IND_STATE.loaded=true;
+      IND_STATE.date=j.date;
+      IND_STATE.data=j.data;
+      renderIndustry(j.data, j);
+    } else {
+      body.innerHTML='<div class="empty-state"><div class="big">🌐</div><div class="tip">行业观察数据暂不可用</div></div>';
+    }
+  });
+}
+
+function renderIndustry(d, meta){
+  document.getElementById('indBadge').textContent = d.report_label || '行业观察';
+  var metaEl=document.getElementById('indMeta');
+  if(meta && meta.date){
+    var srcLabel = meta.source==='default_bundle' ? '内置快照' : (meta.source==='db_snapshot_latest' ? '最近快照' : '当日快照');
+    metaEl.innerHTML='<span>📅 快照日期：'+esc(meta.date)+'</span>'
+      +'<span>🗂 数据来源：'+esc(srcLabel)+'</span>'
+      +'<span>🔖 版本：'+esc(d.version||'-')+'</span>';
+  }
+  var html='';
+
+  // 1. 全球与中国市场规模
+  var m=d.market||{};
+  function kv(k,obj,color){
+    if(!obj) return '';
+    var v=obj.value, unit=obj.unit||'', delta=obj.yoy!=null ? ('▲ 同比 '+obj.yoy+'%') : (obj.cagr!=null ? ('▲ CAGR '+obj.cagr+'%') : '');
+    return '<div class="ind-kv" style="--c:'+(color||'#58a6ff')+'">'
+      +'<div class="k">'+esc(k)+(obj.source?'<span style="float:right;color:var(--text3);font-size:10px;">'+esc(obj.source)+'</span>':'')+'</div>'
+      +'<div class="v">'+esc(v)+'<small>'+esc(unit)+'</small></div>'
+      +(delta?'<div class="delta">'+delta+'</div>':'')
+      +(obj.note?'<div class="note">'+esc(obj.note)+'</div>':'')
+      +'</div>';
+  }
+  html+='<div class="ind-section">'
+    +'<div class="ind-section-head"><span class="ico">🌍</span><h2>全球与中国市场规模</h2>'
+    +'<span class="hint">数据来自多家公开研究机构，不同口径存在差异，但增长趋势一致</span></div>'
+    +'<div class="ind-kv-grid">'
+    +kv('全球市场规模（2024）',m.global_2024,'#58a6ff')
+    +kv('全球预测（2030）',m.global_2030_forecast,'#bc8cff')
+    +kv('中国数字孪生市场（2024）',m.china_2024,'#3fb950')
+    +kv('中国 3D 项目数（2024）',m.china_3d_projects,'#39c5cf')
+    +'</div>'
+    +'<div class="ind-kv-grid compact" style="margin-top:12px;">'
+    +kv('2025 智能制造方向',m.manufacturing_2025,'#f0a020')
+    +kv('2025 软件平台层',m.software_platform_2025,'#db61a2')
+    +'</div>'
+    +'</div>';
+
+  // 2. 全球市场预测柱 + 技术三次迁移
+  var bars=(m.global_forecast_bars||[]);
+  if(bars.length){
+    var max=Math.max.apply(null,bars.map(function(b){return b.value;}));
+    var barHtml=bars.map(function(b){
+      var pct=max>0?Math.round(b.value/max*100):0;
+      var color = b.year>=2029 ? '#bc8cff' : (b.year>=2026 ? '#3fb950' : '#58a6ff');
+      return '<div class="ind-bar"><div class="lbl">'+b.year+'</div>'
+        +'<div class="track"><div class="fill" style="width:'+pct+'%;--c:'+color+';background:linear-gradient(90deg,'+color+',rgba(255,255,255,.15));"></div></div>'
+        +'<div class="val" style="width:90px;">'+b.value+' 亿<span style="color:var(--text3);font-size:10px;"> '+esc(b.source||'')+'</span></div></div>';
+    }).join('');
+    var shiftHtml=(d.tech_shifts||[]).map(function(s){
+      return '<div class="tech-shift" style="--c:'+s.color+'"><div class="era">'+esc(s.era)+'</div>'
+        +'<div class="title">'+esc(s.title)+'</div><div class="desc">'+esc(s.desc)+'</div></div>';
+    }).join('');
+    html+='<div class="ind-grid-2 ind-section">'
+      +'<div class="ind-card"><h3>全球市场规模预测 <span class="sub">单位：亿美元</span></h3>'+barHtml+'</div>'
+      +'<div class="ind-card"><h3>技术路线三次迁移</h3><div class="tech-shift-row">'+shiftHtml+'</div></div>'
+      +'</div>';
+  }
+
+  // 3. 2026 核心技术突破
+  if(d.tech_breakthroughs && d.tech_breakthroughs.length){
+    var bc=d.tech_breakthroughs.map(function(b){
+      return '<div class="break-card"><div class="b-icon">'+b.icon+'</div>'
+        +'<div class="b-title">'+esc(b.title)+'</div><div class="b-tag">'+esc(b.tag||'')+'</div>'
+        +'<div class="b-desc">'+esc(b.desc)+'</div>'
+        +'<div class="b-tags">'+(b.tags||[]).map(function(t){return '<span>'+esc(t)+'</span>';}).join('')+'</div>'
+        +'</div>';
+    }).join('');
+    html+='<div class="ind-section"><div class="ind-section-head"><span class="ico">🚀</span><h2>2026 三大核心技术突破</h2><span class="hint">数字孪生正从"可视化"走向"可决策"，技术集群正在重塑</span></div>'
+      +'<div class="break-grid">'+bc+'</div></div>';
+  }
+
+  // 4. 核心应用场景分布
+  var ap=d.applications||{};
+  if(ap.china_2024_share || ap.global_grid){
+    var leftBars=(ap.china_2024_share||[]).map(function(a){
+      return '<div class="ind-bar"><div class="lbl">'+esc(a.name)+'</div>'
+        +'<div class="track"><div class="fill" style="width:'+a.value+'%;--c:'+a.color+';background:linear-gradient(90deg,'+a.color+',rgba(255,255,255,.15));"></div></div>'
+        +'<div class="val">'+a.value+'%</div></div>';
+    }).join('');
+    var tiles=(ap.global_grid||[]).map(function(g){
+      return '<div class="app-tile" style="--c:'+g.color+'"><div class="ico">'+g.icon+'</div>'
+        +'<div class="name">'+esc(g.name)+'</div><div class="val">'+g.value+'<small>'+esc(g.unit||'')+'</small></div></div>';
+    }).join('');
+    var vlist=(ap.high_growth_verticals||[]).map(function(v){
+      return '<div class="vert-item"><div><div class="v-name">'+esc(v.name)+'</div><div class="v-desc">'+esc(v.desc||'')+'</div></div>'
+        +'<div class="v-rate">'+esc(v.rate)+'</div></div>';
+    }).join('');
+    html+='<div class="ind-section"><div class="ind-section-head"><span class="ico">🏙️</span><h2>核心应用场景分布</h2>'
+      +'<span class="hint">'+esc(ap.note||'')+'</span></div>'
+      +'<div class="ind-grid-2">'
+      +'<div class="ind-card"><h3>中国数字孪生项目领域分布</h3>'+leftBars+'<div style="font-size:10.5px;color:var(--text3);margin-top:8px;">来源：《中国数字孪生市场探索报告》(2024.1) 等</div></div>'
+      +'<div class="ind-card"><h3>全球高增长领域</h3>'
+        +'<div class="app-grid">'+tiles+'</div>'
+        +'<div style="margin-top:12px;font-size:12px;color:var(--text2);font-weight:600;">🏆 高增长赛道</div>'
+        +'<div class="vert-list" style="margin-top:6px;">'+vlist+'</div>'
+        +'</div>'
+      +'</div></div>';
+  }
+
+  // 5. 中国区域市场格局
+  var rg=d.regions||{};
+  if(rg.top5){
+    var maxShare=Math.max.apply(null,rg.top5.map(function(x){return x.share;}));
+    var rankHtml=rg.top5.map(function(r){
+      var w=Math.round(r.share/maxShare*100);
+      return '<div class="region-row"><div class="rk'+(r.rank===1?' top1':'')+'">'+r.rank+'</div>'
+        +'<div class="nm">'+esc(r.name)+'</div>'
+        +'<div class="track"><div class="fill" style="width:'+w+'%;--c:'+r.color+';background:linear-gradient(90deg,'+r.color+',rgba(255,255,255,.15));"></div></div>'
+        +'<div class="pct">'+r.share+'%</div><div class="tag">'+esc(r.tag||'')+'</div></div>';
+    }).join('');
+    var tiers=rg.city_tiers||[];
+    var maxTier=Math.max.apply(null,tiers.map(function(t){return t.value;}));
+    var tierCols=tiers.map(function(t){
+      var h=Math.round(t.value/maxTier*110);
+      return '<div class="tier-col"><div class="tier-bar" style="height:'+h+'px;--c:'+t.color+';"><span class="v">'+t.value+t.unit+'</span></div>'
+        +'<div class="tier-lbl">'+esc(t.name)+'</div></div>';
+    }).join('');
+    html+='<div class="ind-section"><div class="ind-section-head"><span class="ico">🗺️</span><h2>中国区域市场格局</h2>'
+      +'<span class="hint">'+esc(rg.note||'')+'</span></div>'
+      +'<div class="ind-grid-2">'
+      +'<div class="ind-card"><h3>省份市场份额 TOP 5</h3><div class="region-rank">'+rankHtml+'</div></div>'
+      +'<div class="ind-card"><h3>全线区域结构</h3><div class="tier-row">'+tierCols+'</div>'
+      +'<div style="margin-top:10px;padding:10px;background:rgba(88,166,255,.08);border-left:3px solid #58a6ff;border-radius:6px;font-size:12px;color:var(--text2);line-height:1.6;">💡 '+esc(rg.insight||'')+'</div>'
+      +'</div></div></div>';
+  }
+
+  // 6. 竞争格局
+  var cp=d.competition||{};
+  if(cp.global_leaders || cp.segments){
+    var logos=(cp.global_leaders||[]).map(function(n){return '<span class="comp-logo">'+esc(n)+'</span>';}).join('');
+    var cnLogos=(cp.china_first_tier||[]).map(function(n){return '<span class="comp-logo cn">'+esc(n)+'</span>';}).join('');
+    var segs=(cp.segments||[]).map(function(s){
+      return '<div class="seg-tile" style="--c:'+(s.color||'#58a6ff')+'"><div class="si">'+s.icon+'</div>'
+        +'<div class="sn">'+esc(s.name)+'</div><div class="sd">'+esc(s.desc)+'</div></div>';
+    }).join('');
+    html+='<div class="ind-section"><div class="ind-section-head"><span class="ico">🏆</span><h2>竞争格局：从百花齐放到三足鼎立</h2>'
+      +'<span class="hint">'+esc(cp.summary||'')+'</span></div>'
+      +'<div class="ind-grid-2">'
+      +'<div class="ind-card"><h3>全球头部厂商</h3><div class="comp-logos">'+logos+'</div>'
+      +'<h3 style="margin-top:14px;">中国平台第一梯队</h3><div class="comp-logos">'+cnLogos+'</div></div>'
+      +'<div class="ind-card"><h3>商业段分层</h3><div class="seg-grid">'+segs+'</div></div>'
+      +'</div></div>';
+  }
+
+  // 7. 核心挑战与风险
+  if(d.challenges && d.challenges.length){
+    var risks=d.challenges.map(function(c){
+      return '<div class="risk-item" style="--c:'+(c.color||'#f85149')+'"><div class="ri">'+c.icon+'</div>'
+        +'<div><div class="rt">'+esc(c.title)+'</div><div class="rd">'+esc(c.desc)+'</div></div></div>';
+    }).join('');
+    html+='<div class="ind-section"><div class="ind-section-head"><span class="ico">⚠️</span><h2>核心挑战与风险</h2>'
+      +'<span class="hint">技术追平不等于万事大吉，规模化落地仍面临四大瓶颈</span></div>'
+      +'<div class="risk-list">'+risks+'</div></div>';
+  }
+
+  // 8. 未来趋势展望
+  if(d.future_trends && d.future_trends.length){
+    var fut=d.future_trends.map(function(f){
+      return '<div class="future-card" style="--c:'+(f.color||'#58a6ff')+'"><div class="fid">趋势 '+esc(f.id)+'</div>'
+        +'<div class="ft">'+esc(f.title)+'</div><div class="fd">'+esc(f.desc)+'</div></div>';
+    }).join('');
+    html+='<div class="ind-section"><div class="ind-section-head"><span class="ico">🔮</span><h2>未来趋势展望</h2>'
+      +'<span class="hint">数字孪生正在从"可视化工具"进化为"物理世界的智能操作系统"</span></div>'
+      +'<div class="future-grid">'+fut+'</div></div>';
+  }
+
+  // 9. 资料来源
+  if(d.footer_sources && d.footer_sources.length){
+    html+='<div class="ind-footer"><strong>资料来源：</strong>'+d.footer_sources.map(esc).join(' ｜ ')+'</div>';
+  }
+  document.getElementById('industryBody').innerHTML=html;
 }
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }

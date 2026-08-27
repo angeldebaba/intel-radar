@@ -45,6 +45,7 @@ intel-radar/
 ├── ai.py               # AI 提炼（~180 行）：批量调用 + 降级 + 短摘要重试
 ├── daily_focus.py      # 公开页"每日关注"五维度聚合快照
 ├── hot_stats.py        # 公开页"🔥 热点统计"看板：30 天趋势 / 热词 / 厂商-行业-来源分布 / 相关度 / 头条
+├── industry_overview.py # 公开页"🌐 行业观察"：行业全局视角的市场规模/技术迁移/应用/区域/竞争/风险/未来趋势（结构化研究快照，不依赖抓取数据）
 ├── pusher.py           # 微信 PushPlus 推送
 ├── config.py           # 全局配置：厂商/行业/关键词/阈值，全部可被环境变量覆盖
 ├── templates/
@@ -183,7 +184,20 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 - `save_snapshot` / `load_snapshot` / `list_snapshot_dates`：快照走 `config` 表，key 形如 `hot_stats:YYYY-MM-DD`，值为 JSON
 - `GET /api/hot-stats`：默认返回今日快照；若今日尚无快照则实时聚合并回填缓存，保证冷启动不空白
 - 公开接口**不加鉴权**（快照本身不含敏感数据）；`POST /api/hot-stats/refresh` 允许任何访客触发重建，如需收紧可加 `@require_admin`
-- 前端入口：顶部导航「🔥 热点统计」，hash 路由 `#hot`，DOM 容器 `#view-hot` / `#hotBody`，渲染函数 `renderHot()` 在 `templates/index.html`
+- 前端入口：顶部导航「📊 情报看板」，hash 路由 `#hot`，DOM 容器 `#view-hot` / `#hotBody`，渲染函数 `renderHot()` 在 `templates/index.html`
+
+### `industry_overview.py`
+
+- **行业全局观察**看板的数据源。和 `hot_stats` 不同，它**不基于本站抓取情报聚合**，而是打包一份结构化的行业研究快照（市场规模、技术三次迁移、核心技术突破、应用场景分布、中国区域格局、竞争格局、核心挑战、未来趋势）
+- `DEFAULT_OVERVIEW`：仓库内置兜底快照，数值标注来源与年份（信通院、IDC、Gartner、MarketsandMarkets、Grand View Research 等）；不同口径数字并列展示，不盲目合并
+- `get_snapshot(date=None)`：优先读数据库 `config` 表 key=`industry_overview:YYYY-MM-DD`；没有当日则取最近一份；再没有才返回内置默认
+- `save_snapshot(data, date=None)`：后台或 AI 写入新版快照（全量覆盖）
+- `list_snapshot_dates(limit=30)`：列出有快照的日期
+- `generate_today()`：供 `job_collect` 每晚调用；首次启动时把内置快照落库，方便后台编辑
+- `GET /api/industry-overview`（公开，`?date=YYYY-MM-DD` 可取历史）
+- `GET /api/industry-overview/dates`
+- `POST /api/admin/industry-overview`（**需 `@require_admin`**，body `{date?, data:{...}}`）
+- 前端入口：顶部导航「🌐 行业观察」，hash 路由 `#industry`，DOM 容器 `#view-industry` / `#industryBody`，渲染函数 `renderIndustry()`
 
 ### 前端 `templates/index.html`
 
@@ -212,6 +226,8 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 | GET | `/api/hot-stats` | 行业热点统计看板（默认今日快照；无快照时实时聚合） |
 | POST | `/api/hot-stats/refresh` | 手动重建当日热点统计快照（公开接口） |
 | GET | `/api/hot-stats/dates` | 热点统计快照日期列表 |
+| GET | `/api/industry-overview` | 行业全局观察（市场/技术/应用/区域/竞争/风险/趋势；来源为打包快照+DB 覆盖，不依赖抓取数据） |
+| GET | `/api/industry-overview/dates` | 行业观察快照日期列表 |
 | POST | `/api/favorite/<id>` | 收藏切换 |
 | POST | `/api/track` | 访问埋点 |
 
