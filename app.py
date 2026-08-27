@@ -563,13 +563,14 @@ def api_dates():
 
 
 @app.route('/api/daily-focus')
+@require_admin
 def api_daily_focus():
-    """每日关注：返回指定日期窗口的五维情报聚合。
+    """每日关注：返回指定日期窗口的五维情报聚合（后台可见）。
 
     参数：
         date: 快照日期 YYYY-MM-DD（缺省今天）
         days: 窗口天数（缺省 config.DAILY_FOCUS_DAYS）
-        refresh: 传 1 强制重新生成快照（后台手动刷新用，需鉴权）
+        refresh: 传 1 强制重新生成快照
     读取已缓存快照；无缓存则实时计算。
     """
     refresh = request.args.get('refresh') == '1'
@@ -580,10 +581,7 @@ def api_daily_focus():
     except ValueError:
         days = None
 
-    # 强制刷新需管理员登录
     if refresh:
-        if not session.get('admin'):
-            return jsonify({'ok': False, 'error': '未授权'}), 401
         data = daily_focus.save_focus_snapshot(date_str, days)
         database.log('system', '手动刷新每日关注快照: {}'.format(data['date']))
         return jsonify({'ok': True, 'data': data})
@@ -593,6 +591,7 @@ def api_daily_focus():
 
 
 @app.route('/api/daily-focus/dates')
+@require_admin
 def api_daily_focus_dates():
     """返回有每日关注快照的所有日期（倒序）"""
     rows = database.query(
@@ -603,18 +602,17 @@ def api_daily_focus_dates():
 
 # ==================== 热点统计看板 ====================
 @app.route('/api/hot-stats')
+@require_admin
 def api_hot_stats():
-    """数字孪生行业热点统计看板数据。
+    """数字孪生行业热点统计看板数据（后台可见）。
 
     参数：
         date: 快照日期 YYYY-MM-DD（缺省今天，读缓存快照；无快照则实时聚合）
-        refresh: 1 强制重新生成快照（需管理员登录）
+        refresh: 1 强制重新生成快照
     """
     date_str = (request.args.get('date') or '').strip()
     refresh = request.args.get('refresh') == '1'
     if refresh:
-        if not session.get('admin'):
-            return jsonify({'ok': False, 'error': '未授权'}), 401
         data = hot_stats.save_snapshot(date_str or None)
         database.log('system', '手动刷新热点统计快照: {}'.format(data['date']))
         return jsonify({'ok': True, 'date': data['date'],
@@ -633,8 +631,9 @@ def api_hot_stats():
 
 
 @app.route('/api/hot-stats/refresh', methods=['POST'])
+@require_admin
 def api_hot_stats_refresh():
-    """手动触发当日热点统计快照刷新（公开接口，快照本身不含敏感数据）。"""
+    """手动触发当日热点统计快照刷新（后台）。"""
     try:
         data = hot_stats.save_snapshot()
         database.log('system', '手动刷新热点统计快照: {}'.format(data['date']))
@@ -645,6 +644,7 @@ def api_hot_stats_refresh():
 
 
 @app.route('/api/hot-stats/dates')
+@require_admin
 def api_hot_stats_dates():
     """返回有热点统计快照的日期（倒序，最多30条）"""
     dates = hot_stats.list_snapshot_dates(limit=30)

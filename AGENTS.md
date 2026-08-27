@@ -43,8 +43,8 @@ intel-radar/
 ├── collector.py        # 采集器（~1890 行）：官网 + 搜索引擎 + RSS + 公众号品牌词抓取 / 媒体提取 / 质量门禁
 ├── database.py         # 数据层（~570 行）：SQLite & PG 双兼容、自动迁移、备份
 ├── ai.py               # AI 提炼（~180 行）：批量调用 + 降级 + 短摘要重试
-├── daily_focus.py      # 公开页"每日关注"五维度聚合快照
-├── hot_stats.py        # 公开页"🔥 热点统计"看板：30 天趋势 / 热词 / 厂商-行业-来源分布 / 相关度 / 头条
+├── daily_focus.py      # 后台"每日关注"五维度聚合快照（鉴权后可见）
+├── hot_stats.py        # 后台"📊 情报看板"：30 天趋势 / 热词 / 厂商-行业-来源分布 / 相关度 / 头条
 ├── industry_overview.py # 公开页"🌐 行业观察"：行业全局视角的市场规模/技术迁移/应用/区域/竞争/风险/未来趋势（结构化研究快照，不依赖抓取数据）
 ├── pusher.py           # 微信 PushPlus 推送
 ├── config.py           # 全局配置：厂商/行业/关键词/阈值，全部可被环境变量覆盖
@@ -183,7 +183,7 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 - `build_stats(days=30)`：实时聚合——总览 KPI、30 天趋势、厂商 / 行业 / 来源分布、相关度分布、标签云、领域热词（`DOMAIN_TERMS` 加权）、高相关头条
 - `save_snapshot` / `load_snapshot` / `list_snapshot_dates`：快照走 `config` 表，key 形如 `hot_stats:YYYY-MM-DD`，值为 JSON
 - `GET /api/hot-stats`：默认返回今日快照；若今日尚无快照则实时聚合并回填缓存，保证冷启动不空白
-- 公开接口**不加鉴权**（快照本身不含敏感数据）；`POST /api/hot-stats/refresh` 允许任何访客触发重建，如需收紧可加 `@require_admin`
+- 接口**需 `@require_admin`**（已收紧到后台可见，未登录返回 401）；`POST /api/hot-stats/refresh` 同步收紧
 - 前端入口：顶部导航「📊 情报看板」，hash 路由 `#hot`，DOM 容器 `#view-hot` / `#hotBody`，渲染函数 `renderHot()` 在 `templates/index.html`
 
 ### `industry_overview.py`
@@ -221,11 +221,6 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 | GET | `/api/intelligence` | 情报列表（支持 vendor/industry/tag/keyword/排序） |
 | GET | `/api/filters` | 筛选项元数据 |
 | GET | `/api/dates` | 有数据的日期列表 |
-| GET | `/api/daily-focus` | 每日关注聚合（当日） |
-| GET | `/api/daily-focus/dates` | 每日关注快照日期 |
-| GET | `/api/hot-stats` | 行业热点统计看板（默认今日快照；无快照时实时聚合） |
-| POST | `/api/hot-stats/refresh` | 手动重建当日热点统计快照（公开接口） |
-| GET | `/api/hot-stats/dates` | 热点统计快照日期列表 |
 | GET | `/api/industry-overview` | 行业全局观察（市场/技术/应用/区域/竞争/风险/趋势；来源为打包快照+DB 覆盖，不依赖抓取数据） |
 | GET | `/api/industry-overview/dates` | 行业观察快照日期列表 |
 | POST | `/api/favorite/<id>` | 收藏切换 |
@@ -233,6 +228,8 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 
 后台接口（需要 `@require_admin` session）：
 `/api/admin/login` · `/api/admin/logout` · `/api/admin/status` ·
+`/api/daily-focus` · `/api/daily-focus/dates` ·
+`/api/hot-stats` · `/api/hot-stats/refresh` (POST) · `/api/hot-stats/dates` ·
 `/api/admin/analytics` · `/api/admin/visit-detail` ·
 `/api/admin/dahua` (GET/POST) · `/api/admin/dahua/<id>` (DELETE) · `/api/admin/dahua/import-text` ·
 `/api/admin/analysis` · `/api/admin/analysis/export` ·
