@@ -103,6 +103,29 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px;border-top:1px solid rgba(48,54,61,.5);}
 .card-foot .date{color:var(--text3);font-size:11.5px;}
 .expand-btn{background:none;border:none;color:var(--text2);font-size:12px;cursor:pointer;padding:2px 6px;}
+
+/* ===== 每日关注 ===== */
+.focus-bar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+.focus-head h2{font-size:18px;margin:0 0 2px;}
+.focus-head .hint{color:var(--text3);font-size:12px;display:block;margin-top:2px;}
+.focus-controls{display:flex;gap:8px;align-items:center;}
+.focus-controls select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12.5px;font-family:inherit;outline:none;}
+.focus-controls select:focus{border-color:var(--blue);}
+.focus-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px;}
+.focus-tabs button{background:none;border:none;color:var(--text2);padding:8px 14px;font-size:13.5px;border-radius:8px;cursor:pointer;transition:all .15s;font-family:inherit;}
+.focus-tabs button:hover{color:var(--text);background:var(--bg3);}
+.focus-tabs button.active{color:var(--blue);background:rgba(88,166,255,.12);font-weight:600;}
+.focus-count{background:var(--bg3);color:var(--text2);border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px;}
+.focus-tabs button.active .focus-count{background:rgba(88,166,255,.2);color:var(--blue);}
+.focus-panel{animation:cardIn .3s ease both;}
+.focus-dimhead{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;}
+.focus-dimicon{font-size:22px;}
+.focus-dimhead h3{margin:0;font-size:15px;}
+.focus-dimhead .hint{color:var(--text3);font-size:11.5px;margin:1px 0 0;}
+.focus-dimpill{margin-left:auto;background:var(--bg3);color:var(--text2);font-size:12px;padding:3px 10px;border-radius:12px;white-space:nowrap;}
+.focus-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
+.focus-card{height:100%;}
+@media(max-width:600px){.focus-list{grid-template-columns:1fr;}.focus-controls{width:100%;}.focus-controls select{flex:1;}}
 .expand-btn:hover{color:var(--blue);}
 .empty-state{text-align:center;padding:60px 20px;color:var(--text3);}
 .empty-state .big{font-size:42px;margin-bottom:12px;}
@@ -252,6 +275,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <div class="logo"><span class="icon">📡</span>行业情报雷达<small>数字孪生 · 视频融合</small></div>
     <div class="topbar-spacer"></div>
     <div class="topbar-links">
+      <a href="javascript:;" id="linkFocus" onclick="showView('focus')">📋 每日关注</a>
       <a href="javascript:;" id="btnBack" onclick="showView('radar')">← 返回</a>
       <a href="javascript:;" id="linkAdmin" onclick="showView('admin-login')">⚙ 后台</a>
     </div>
@@ -295,6 +319,32 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
   <div class="feed-footer" id="feedFooter"></div>
   <div id="feedSentinel" style="height:1px;"></div>
 </div>
+
+<!-- ========== 公开页：每日关注 ========== -->
+<div id="view-focus" class="hidden">
+  <div class="focus-bar">
+    <div class="focus-head">
+      <h2>📋 每日关注</h2>
+      <span class="hint" id="focusSub">数字孪生 · 视频融合 当日行业全景</span>
+    </div>
+    <div class="focus-controls">
+      <select id="fFocusDate" title="选择日期" onchange="FOCUS_STATE.date=this.value;loadFocus();"><option value="">今日</option></select>
+      <button class="btn btn-sm" id="focusRefreshBtn" onclick="focusRefresh()">🔄 刷新</button>
+    </div>
+  </div>
+
+  <!-- 维度导航 -->
+  <div class="focus-tabs" id="focusTabs"></div>
+
+  <!-- 维度面板 -->
+  <div id="focusPanels"></div>
+
+  <div class="empty-state hidden" id="focusEmpty">
+    <div class="big">🛰️</div>
+    <div class="tip">今日暂无情报聚合数据。<br>等每日自动采集完成后，「每日关注」会自动生成当日概览。</div>
+  </div>
+</div>
+
 
 <!-- ========== 后台：登录 ========== -->
 <div id="view-admin-login" class="hidden">
@@ -525,13 +575,14 @@ function api(url, opts){ opts=opts||{}; return fetch(url, opts).then(function(r)
 
 /* ===== 视图切换 ===== */
 function showView(v){
-  ['radar','admin-login','admin'].forEach(function(id){
+  ['radar','focus','admin-login','admin'].forEach(function(id){
     document.getElementById('view-'+id).classList.add('hidden');
   });
   document.getElementById('view-'+v).classList.remove('hidden');
-  document.getElementById('btnBack').style.display = (v==='admin'||v==='admin-login') ? 'inline-block' : 'none';
+  document.getElementById('btnBack').style.display = (v==='admin'||v==='admin-login'||v==='focus') ? 'inline-block' : 'none';
   document.getElementById('linkAdmin').style.display = (v==='admin') ? 'none' : 'inline-block';
   if(v==='radar'){ loadAll(); }
+  if(v==='focus'){ loadFocus(); }
   if(v==='admin-login'){ checkAdminStatus(); }
   if(v==='admin'){ loadAdminPanel(); }
   window.scrollTo(0,0);
@@ -539,11 +590,124 @@ function showView(v){
 function initRoute(){
   var h = location.hash;
   if(h==='#admin' || h==='#admin-login'){ showView('admin-login'); checkAdminStatus(); }
+  else if(h==='#focus'){ showView('focus'); }
   else { showView('radar'); }
 }
 
 /* ===== 公开页 ===== */
 function loadAll(){ loadStats(); loadFilters(); loadIntelligence(); }
+
+/* ===== 每日关注 ===== */
+var FOCUS_STATE = { date: '', activeDim: 'industry' };
+var FOCUS_ORDER = ['industry','product','technology','market','watch'];
+
+function focusRefresh(){
+  // 后台登录用户可强制刷新快照；未登录仅重新拉取当前日期数据
+  api('/api/daily-focus?refresh=1&date='+encodeURIComponent(FOCUS_STATE.date||todayStr()))
+    .then(function(res){ if(res.ok){ loadFocus(); } else { loadFocus(); } });
+}
+
+function loadFocus(){
+  api('/api/daily-focus/dates').then(function(res){
+    var sel=document.getElementById('fFocusDate');
+    // 重建日期选项（今日优先）
+    var cur=sel.value;
+    var seen={};
+    sel.innerHTML='';
+    var today=todayStr();
+    var dates=res.ok&&res.data?res.data:[];
+    var ordered=[today].concat(dates.filter(function(d){return d!==today;}).slice(0,29));
+    ordered.forEach(function(d){ seen[d]=true; var o=document.createElement('option'); o.value=d; o.textContent=(d===today)?'今日 ('+d+')':d; sel.appendChild(o); });
+    if(cur&&seen[cur]){ sel.value=cur; }
+    else if(FOCUS_STATE.date){ sel.value=FOCUS_STATE.date; }
+  });
+  api('/api/daily-focus?date='+encodeURIComponent(FOCUS_STATE.date)).then(function(res){
+    if(!res.ok || !res.data){ showFocusEmpty(); return; }
+    renderFocus(res.data);
+  });
+}
+
+function renderFocus(data){
+  var dims=data.dimensions||{};
+  var any=false;
+  for(var k in dims){ if(dims[k].total>0) any=true; }
+  if(!any){ showFocusEmpty(); return; }
+  document.getElementById('focusEmpty').classList.add('hidden');
+
+  var sub='';
+  if(data.days>1){ sub='近 '+data.days+' 天 · '+data.window_start+' ~ '+data.date+' · 生成于 '+data.generated_at; }
+  else { sub='当日 · '+data.date+' · 生成于 '+data.generated_at; }
+  document.getElementById('focusSub').textContent=sub;
+
+  // 维度导航
+  var tabs='';
+  FOCUS_ORDER.forEach(function(dim){
+    var d=dims[dim];
+    if(!d || !d.total) return;
+    tabs+='<button class="'+(FOCUS_STATE.activeDim===dim?'active':'')+'" onclick="focusSwitchDim(\''+dim+'\')">'
+        +d.icon+' '+d.name+' <span class="focus-count">'+d.total+'</span></button>';
+  });
+  document.getElementById('focusTabs').innerHTML=tabs;
+
+  // 维度面板
+  var panels='';
+  FOCUS_ORDER.forEach(function(dim){
+    var d=dims[dim];
+    if(!d || !d.total) return;
+    var visible=FOCUS_STATE.activeDim===dim?'':'hidden';
+    var items=(d.items||[]).map(function(it){ return focusCard(it); }).join('');
+    panels+='<div class="focus-panel '+visible+'" id="focusPanel-'+dim+'">'
+        +'<div class="focus-dimhead"><span class="focus-dimicon">'+d.icon+'</span>'
+        +'<div><h3>'+d.name+'</h3><p class="hint">'+d.desc+'</p></div>'
+        +'<span class="focus-dimpill">共 '+d.total+' 条</span></div>'
+        +'<div class="focus-list">'+items+'</div></div>';
+  });
+  document.getElementById('focusPanels').innerHTML=panels;
+}
+
+function focusSwitchDim(dim){
+  FOCUS_STATE.activeDim=dim;
+  // 更新 tab 高亮
+  var tabs=document.getElementById('focusTabs');
+  Array.prototype.forEach.call(tabs.querySelectorAll('button'),function(b){
+    var on=b.getAttribute('onclick')||'';
+    b.classList.toggle('active', on.indexOf("'"+dim+"'")>=0);
+  });
+  // 只显示当前维度面板
+  FOCUS_ORDER.forEach(function(d){
+    var el=document.getElementById('focusPanel-'+d);
+    if(el) el.classList.toggle('hidden', d!==dim);
+  });
+}
+
+function showFocusEmpty(){
+  document.getElementById('focusEmpty').classList.remove('hidden');
+  document.getElementById('focusTabs').innerHTML='';
+  document.getElementById('focusPanels').innerHTML='';
+  document.getElementById('focusSub').textContent='数字孪生 · 视频融合 当日行业全景';
+}
+
+function focusCard(it){
+  var src=it.source?('<span class="chip chip-src">'+esc(it.source)+'</span>'):'';
+  var ven=it.vendor?('<span class="chip chip-vendor">'+esc(it.vendor)+'</span>'):'';
+  var rel=it.relevance?('<span class="rel-num">★ '+it.relevance+'</span>'):'';
+  var img=it.image?('<img class="card-thumb" loading="lazy" src="'+esc(it.image)+'" alt="" onerror="this.style.display=\'none\'">'):'';
+  var hasImg=it.image?' has-image':'';
+  var tags=(it.tags||[]).map(function(t){ return '<span class="chip chip-tag">'+esc(t)+'</span>'; }).join('');
+  var link=it.url?('<a class="card-title" href="'+esc(it.url)+'" target="_blank" rel="noopener">'+esc(it.title)+'</a>')
+                 :('<span class="card-title">'+esc(it.title)+'</span>');
+  var sum=it.summary||it.description||'';
+  if(sum.length>150) sum=sum.slice(0,150)+'…';
+  var body='<div class="card-body">'
+      +'<div class="card-top"><div class="card-titlewrap" style="flex:1;min-width:0;">'+link+'</div><span class="rel-num">'+rel+'</span></div>'
+      +'<div class="card-meta">'+ven+src+tags+'</div>'
+      +(sum?('<div class="card-summary clamp">'+esc(sum)+'</div>'):'')
+      +'</div>';
+  var media=img?('<div class="card-media">'+img+'</div>'):'';
+  return '<div class="intel-card focus-card'+hasImg+'">'+(media?media+body:body)+'</div>';
+}
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
 /* ===== 趋势仪表盘 ===== */
 function loadTrend(){

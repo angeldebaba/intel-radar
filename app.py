@@ -23,6 +23,7 @@ import database
 import collector
 import pusher
 import ai
+import daily_focus
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -557,6 +558,45 @@ def api_dates():
     """返回有数据的所有日期（倒序）"""
     rows = database.query('SELECT DISTINCT date FROM intelligence ORDER BY date DESC LIMIT 30')
     return jsonify({'ok': True, 'data': [r['date'] for r in rows]})
+
+
+@app.route('/api/daily-focus')
+def api_daily_focus():
+    """每日关注：返回指定日期窗口的五维情报聚合。
+
+    参数：
+        date: 快照日期 YYYY-MM-DD（缺省今天）
+        days: 窗口天数（缺省 config.DAILY_FOCUS_DAYS）
+        refresh: 传 1 强制重新生成快照（后台手动刷新用，需鉴权）
+    读取已缓存快照；无缓存则实时计算。
+    """
+    refresh = request.args.get('refresh') == '1'
+    date_str = request.args.get('date') or ''
+    days = None
+    try:
+        days = int(request.args.get('days', 0)) or None
+    except ValueError:
+        days = None
+
+    # 强制刷新需管理员登录
+    if refresh:
+        if not session.get('admin'):
+            return jsonify({'ok': False, 'error': '未授权'}), 401
+        data = daily_focus.save_focus_snapshot(date_str, days)
+        database.log('system', '手动刷新每日关注快照: {}'.format(data['date']))
+        return jsonify({'ok': True, 'data': data})
+
+    data = daily_focus.load_focus_snapshot(date_str)
+    return jsonify({'ok': True, 'data': data})
+
+
+@app.route('/api/daily-focus/dates')
+def api_daily_focus_dates():
+    """返回有每日关注快照的所有日期（倒序）"""
+    rows = database.query(
+        "SELECT key FROM config WHERE key LIKE 'daily_focus:%' ORDER BY key DESC")
+    dates = [r['key'].split(':', 1)[1] for r in rows]
+    return jsonify({'ok': True, 'data': dates})
 
 
 @app.route('/api/favorite/<int:iid>', methods=['POST'])
@@ -1378,6 +1418,15 @@ def job_collect():
         print('[{}] 采集失败: {}'.format(database.now_str(), e))
     finally:
         _job_lock_release('daily_collect', token)
+
+    # 采集完成后生成「每日关注」当日快照（复用采集锁令牌，避免多实例重复写）
+    # 若采集本身失败也尝试生成，保证当日概览可用（快照内容来自已有数据）
+    if token is not None:
+        try:
+            d, ts = daily_focus.generate_today()
+            database.log('system', '每日关注快照已生成: {} @ {}'.format(d, ts))
+        except Exception as e:
+            database.log('system', '每日关注快照生成失败: {}'.format(e), status='error')
 
 
 def job_push():

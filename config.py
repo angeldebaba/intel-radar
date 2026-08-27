@@ -69,6 +69,13 @@ INTEL_RETENTION_DAYS = int(os.environ.get('INTEL_RETENTION_DAYS', '90'))
 # SQLite 全库备份到对象存储的最小间隔秒数（此前逐条写库都全量备份，库变大后会拖垮采集）
 BACKUP_INTERVAL = int(os.environ.get('BACKUP_INTERVAL', '600'))
 
+# ===== 每日关注（公开页聚合栏目） =====
+# 按五大维度（行业动态/产品/技术/市场/关注点）归并展示当日情报
+# 快照在每晚采集完成后自动生成，也可后台手动刷新
+DAILY_FOCUS_TIME = os.environ.get('DAILY_FOCUS_TIME', '23:30')  # 快照生成时间（晚于采集）
+DAILY_FOCUS_DAYS = int(os.environ.get('DAILY_FOCUS_DAYS', '1'))  # 窗口：展示近N天情报（默认当日）
+DAILY_FOCUS_PER_DIM = int(os.environ.get('DAILY_FOCUS_PER_DIM', '12'))  # 每维度最多展示条数
+
 # ===== 媒体抓取（原文图片/视频嵌入卡片） =====
 # 每次采集最多抓多少篇文章页提取图片/视频（每篇多一次 HTTP 请求，控制总耗时）
 MEDIA_ENRICH_LIMIT = int(os.environ.get('MEDIA_ENRICH_LIMIT', '10'))
