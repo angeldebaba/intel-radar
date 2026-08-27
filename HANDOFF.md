@@ -1,68 +1,120 @@
-# 🔄 HANDOFF — 项目现场快照（2026-08-22）
+# 🔄 HANDOFF — 项目现场快照（2026-08-27）
 
-> 换电脑 / 换环境恢复现场用。配合 README.md 阅读：README 讲怎么跑，本文件讲"现在进行到哪了"。
+> 换电脑 / 换环境恢复现场用。配合 README.md（用户向）和 AGENTS.md（开发者向）阅读：
+> README 讲怎么跑、AGENTS 讲怎么改、本文件讲"现在进行到哪了"。
 
 ## 一、当前状态（一句话）
 
-功能全部完成并已上线验证：**采集 → AI 提炼/过滤 → 卡片展示 → 定时任务 → 微信推送** 全链路跑通，云端 Render + 本地均可运行。
+**全链路已上线 CloudBase 云托管生产环境并稳定运行**：
+定时采集 → AI 提炼/过滤 → 卡片展示 → 每日关注聚合 → 微信推送，全链路自动。
+最近一次迭代重心：**公开页"每日关注"栏目** + **内容质量门禁（隔离区）** + **AI 摘要 120~200 字硬约束**。
 
-## 二、最近完成的工作（按时间）
+## 二、生产环境关键事实（不要再按 Render 找）
 
-1. 修复致命 bug：`collector.py` 引用不存在的 `config.OFFICIAL_CONFIG`（曾导致云端定时采集每晚崩溃）
-2. 修复后台未鉴权漏洞：「⚙ 后台」链接改为先跳登录页
-3. UX 三连改：筛选栏单行化 / 趋势仪表盘移入后台「数据概览」/ 卡片放大 + 分页 + 缩略图（og:image 抓取）
-4. **AI 提炼与智能过滤（核心新功能）**：
-   - 新增 `ai.py`：批量调用 OpenAI 兼容接口，对每批 10 条情报做「摘要提炼 + 相关度 0-5 打分 + 打标签」
-   - 低于 `AI_MIN_SCORE`（默认 2 分）的内容自动丢弃，实测能准确丢掉股票行情页、获奖软文、无关产品页
-   - 无 Key / API 失败时优雅降级回关键词逻辑，采集永不中断
-   - 默认服务商：**智谱 GLM-4-Flash（免费）**，可换 DeepSeek 等任意 OpenAI 兼容服务
-   - 前端卡片展示 AI 摘要（过长收起可展开），点标题跳原文
+- **平台**：腾讯云 CloudBase 云托管（不再是 Render，Render 已停用）
+- **地域 / envId**：`ap-shanghai` / `angel-d2gws9dnv51db45e2`
+- **服务名**：`angel`
+- **部署方式**：push 到 `main` → GitHub Actions（`.github/workflows/deploy.yml`）→ `deploy/tcb_deploy.py` 调 TCBR OpenAPI 触发镜像构建
+- **镜像**：`python:3.11-slim` + `gunicorn app:app -b 0.0.0.0:80 --workers 2 --timeout 120`
+- **数据库**：SQLite（`DATA_DIR=/data/radar.db`，云硬盘持久化到 `/data`）
+  - 历史上用过 Render 的免费 PostgreSQL，现已迁回 SQLite + 云硬盘 + `BACKUP_DIR` 节流备份
+  - 代码仍保留 PG 兼容（`DATABASE_URL` 环境变量自动切换），未来要切 PG 也不用改代码
+- **实例数**：保持 1 个（多实例时靠 `_job_lock_acquire` 防重复采集/推送）
+- **必需的 GitHub Secrets**：`TENCENT_SECRET_ID`、`TENCENT_SECRET_KEY`（子账号，授予 `QcloudTCBFullAccess` + `QcloudTCBRFullAccess`）
+- **看日志**：CloudBase 控制台 → 云托管 → 服务 `angel` → 版本列表 → 日志（全部 stdout，无本地日志文件）
 
-## 三、环境变量清单（名称，值不进仓库！）
+## 三、最近完成的工作（按时间倒序，节选）
 
-| 变量 | 说明 | 云端 Render |
+1. **公开页"每日关注"栏目** —— 五维度（行业动态/产品/技术/市场/关注点）当日聚合，`daily_focus.py` 生成快照存 `config` 表，采集完成后自动刷新
+2. **内容质量门禁** —— `quality_verdict()` 拦截"仅含链接无实质文本"的低质条目，进 `quarantine` 表备查，后台可审查/深抓复检/恢复入库
+3. **全文存档 + 原文查看** —— `article_archive` 表保存净化 HTML 与纯文本，`/article/<id>` 可本地回看（防原文链接过期/反爬）
+4. **AI 摘要长度硬约束** —— prompt 强制 120~200 字三段结构；<100 字自动 `_repair_short()` 补写重试
+5. **相关度阈值提质** —— `AI_MIN_SCORE` 与 `MIN_RELEVANCE` 调到 3；`RELEVANCE_HIGH` 加入"视频孪生/三维/可视化"
+6. **媒体提取增强** —— 正文外链视频追溯、og:image 抓取、推荐位/广告/头像/二维码过滤、头图按实际宽高比自适应
+7. **访问统计模块** —— 埋点 + 会话时长 + 来源追踪 + IP 归属地批量富化 + 后台明细列表（90 天滚动清理）
+8. **跨实例防重跑锁** —— 基于 DB `config` 表的令牌锁，CloudBase 滚动部署时新老实例不会重复跑任务
+9. **备份节流** —— `BACKUP_INTERVAL=600s`，避免逐条写库就全量备份拖垮采集
+10. **修复致命 bug**：`collector.py` 引用不存在的 `config.OFFICIAL_CONFIG`（曾导致云端定时采集每晚崩溃）
+11. **后台未鉴权漏洞修复**：「⚙ 后台」入口先跳登录页
+
+## 四、环境变量清单（名称进文档，值不进仓库！）
+
+生产环境在 CloudBase 服务配置里设置；本地用 `export` 或 `.env`（已 gitignore）。
+
+| 变量 | 说明 | 生产必须 |
 |---|---|---|
-| `ADMIN_PASSWORD` | 后台登录密码 | ✅ 已配置 |
-| `SECRET_KEY` | Flask 会话密钥 | ✅ 已配置 |
-| `PUSHPLUS_TOKEN` | 微信推送 token（pushplus.plus） | ✅ 已配置 |
-| `AI_API_KEY` | 智谱 Key（open.bigmodel.cn，glm-4-flash 免费） | ✅ 已配置 |
-| `AI_API_BASE` | 默认 `https://open.bigmodel.cn/api/paas/v4`，可覆盖 | 默认值即可 |
-| `AI_MODEL` | 默认 `glm-4-flash`，可覆盖 | 默认值即可 |
-| `DATA_DIR` | 本地运行时 SQLite 目录 | Render 自动挂 |
-| `BACKUP_DIR` | 对象存储备份目录（可选） | ✅ 已配置 |
+| `ADMIN_PASSWORD` | 后台登录密码（`config.py` 默认 `luban2026` 仅本地兜底） | ✅ |
+| `SECRET_KEY` | Flask session 密钥 | ✅ |
+| `AI_API_KEY` | 智谱 Key（open.bigmodel.cn，`glm-4-flash` 免费） | 推荐 |
+| `AI_API_BASE` | 默认 `https://open.bigmodel.cn/api/paas/v4`，可换 DeepSeek 等 | 可选 |
+| `AI_MODEL` | 默认 `glm-4-flash` | 可选 |
+| `AI_MIN_SCORE` | AI 评分低于此值丢弃，默认 3 | 可选 |
+| `PUSHPLUS_TOKEN` | PushPlus 微信推送 token | 推荐 |
+| `DATA_DIR` | SQLite 目录，生产 `/data` | ✅ |
+| `BACKUP_DIR` | 对象存储备份挂载点（容器重启可恢复） | 推荐 |
+| `BACKUP_INTERVAL` | 备份节流秒数，默认 600 | 可选 |
+| `COLLECT_TIME` | 每日采集时间，默认 `23:00` | 可选 |
+| `PUSH_TIME` | 每日推送时间，默认 `08:00` | 可选 |
+| `DAILY_FOCUS_TIME` | 每日关注快照时间，默认 `23:30` | 可选 |
+| `FRESH_DAYS` | 文章发布时间超过 N 天不入库，默认 30 | 可选 |
+| `INTEL_RETENTION_DAYS` | 情报保留天数，默认 90 | 可选 |
+| `VISIT_RETENTION_DAYS` | 访问明细保留天数，默认 90 | 可选 |
+| `QUARANTINE_ENABLED` | 质量门禁开关，默认 `1` | 可选 |
+| `DATABASE_URL` | 若设置则切 PostgreSQL（CloudBase 现状不设置，走 SQLite） | 不需要 |
 
-⚠️ **注意**：改 Render 环境变量后需手动 Manual Deploy 才会生效。
+改 CloudBase 环境变量后**必须重新部署版本**才会生效（环境变量在容器启动时注入）。
 
-## 四、新电脑恢复现场（10 分钟）
+## 五、新电脑恢复现场（10 分钟）
 
 ```bash
-# 1. 拉代码（无 git 时直接下 zip 解压）
-#    https://github.com/angeldebaba/intel-radar/archive/refs/heads/main.zip
+# 1. 拉代码
+git clone https://github.com/angeldebaba/intel-radar.git
+cd intel-radar
+# （无 git 时直接下 zip：https://github.com/angeldebaba/intel-radar/archive/refs/heads/main.zip）
 
-# 2. 建虚拟环境 + 装依赖（Python 3.12 验证通过）
+# 2. 建虚拟环境 + 装依赖（Python 3.11/3.12 均可）
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-#   若 APScheduler 报时区错误：pip install tzdata
+source .venv/bin/activate               # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+# APScheduler 若报 tzdata 缺失：pip install tzdata
 
-# 3. 启动（本地测试）
-DATA_DIR=./data AI_API_KEY=你的key .venv/bin/python app.py
-#   访问 http://127.0.0.1:5000
+# 3. 启动（本地测试，没有 AI Key 也能跑，会降级到关键词评分）
+DATA_DIR=./data AI_API_KEY=你的key PUSHPLUS_TOKEN=你的token python app.py
+# 前台 http://127.0.0.1:5000
+# 后台 http://127.0.0.1:5000/        → 右上角"⚙ 后台"，密码 = ADMIN_PASSWORD
 
 # 4. 验证 AI 通道：登录后台 → AI 设置 → 测试连接，应返回"模型响应: 正常"
+#    Windows 用户也可直接双击 run.bat（首次需把里面硬编码的 Python 路径改成自己的 venv 路径）
 ```
 
 本机不可迁移的内容（换机即失效，需要重建）：
-- `data/radar.db`：本地测试数据库（云端数据在 Render 磁盘上，独立）
-- `.venv`：虚拟环境，重装即可
-- 环境变量的值：去 Render 控制台 / 智谱控制台查看
 
-## 五、待办 / 已知问题
+- `data/radar.db`：本地测试数据库（生产数据在 CloudBase 云硬盘上，独立）
+- `.venv/`：虚拟环境，重装即可
+- 环境变量的值：去 CloudBase 控制台 / 智谱控制台 / PushPlus 官网查看
 
-- [ ] 官网采集源部分失效（超图/数字冰雹/51WORLD 官网 404/403），可在 collector.py 的 OFFICIAL_CONFIG 中更新 URL
-- [ ] README 中 DeepSeek 相关描述可更新为智谱（config 注释已更新）
-- [ ] 定期检查智谱免费额度政策是否变化
+## 六、发布流程
 
-## 六、协作约定
+1. 在本地切 feature 分支：`git checkout -b feature/xxx`
+2. 改动 + 本地跑通 `python app.py`（至少访问 `/api/stats` 返回 200）
+3. commit 用 Conventional Commits 前缀：`feat:` / `fix:` / `chore:` / `docs:`
+4. 推到 GitHub 开 PR，合并到 `main` 后 GitHub Actions 自动部署
+5. 紧急 hotfix 可直推 `main`（Actions 会自动排队执行，并发组 `deploy-production` 不取消在跑任务）
+6. 看部署进度：GitHub 仓库 → Actions 页；部署成功后 CloudBase 控制台能看到新版本
+7. 部署后强刷浏览器（Ctrl/Cmd+Shift+R），前端单文件无构建但有浏览器缓存
 
-- 本机无 git 时，用 GitHub Contents API（PUT 单文件 + PAT）推送，脚本临时写临时删，token 不落盘
-- 数据库 schema 变更走 `PRAGMA table_info` 检测 + `ALTER TABLE` 自动迁移，老库无破坏
+## 七、待办 / 已知问题
+
+- [ ] 官网采集源部分可能 404/403：超图 `supermap.com.cn`、数字冰雹 `digihail.com`、51WORLD 首页，需要定期回归 `OFFICIAL_CONFIG`
+- [ ] `render.yaml` / `Procfile` 是 Render 时代遗留，CloudBase 为主后可以考虑删除或挪到 `legacy/`
+- [ ] `run.bat` 里硬编码了个人 Python 绝对路径（`C:\Users\李悦锋\.workbuddy\...`），换机必改；建议改成读 `python` from PATH
+- [ ] 定期检查智谱 `glm-4-flash` 免费额度政策是否变化
+- [ ] `ADMIN_PASSWORD` 默认值 `luban2026` 在 `config.py` 中是兜底，生产务必通过环境变量覆盖（CloudBase 已配置）
+
+## 八、协作约定
+
+- 数据库 schema 变更走 `init_db()` 内的 `PRAGMA table_info` / `ADD COLUMN IF NOT EXISTS` 兼容迁移，不写独立迁移脚本
+- 新增后台接口**必须**加 `@require_admin`
+- 新增第三方依赖先想清楚是否真的需要，项目刻意保持依赖精简（纯标准库 + 8 个直接依赖）
+- 密钥/token 一律走环境变量或数据库 `config` 表，不进代码、不进 git、不进日志
+- 本机若没有 git，可临时用 GitHub Contents API（PUT 单文件 + PAT），脚本即用即删，token 不落盘

@@ -32,3 +32,4 @@ push_auto_daily.html
 
 # WorkBuddy 工作空间元数据
 .workbuddy/
+.codegraph/
