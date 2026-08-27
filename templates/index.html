@@ -593,9 +593,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <button class="btn btn-ghost btn-sm" onclick="adminLogout()">退出登录</button>
   </div>
   <div class="admin-tabs" id="adminTabs">
-    <button data-tab="overview" class="active" onclick="switchTab('overview')">数据概览</button>
-    <button data-tab="focus" onclick="switchTab('focus')">📋 每日关注</button>
-    <button data-tab="hot" onclick="switchTab('hot')">📊 情报看板</button>
+    <button data-tab="hot" class="active" onclick="switchTab('hot')">📊 情报看板</button>
     <button data-tab="dahua" onclick="switchTab('dahua')">大华功能</button>
     <button data-tab="analysis" onclick="switchTab('analysis')">竞品分析</button>
     <button data-tab="settings" onclick="switchTab('settings')">采集推送</button>
@@ -603,48 +601,8 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
     <button data-tab="logs" onclick="switchTab('logs')">运行日志</button>
   </div>
 
-  <!-- 概览 -->
-  <div class="tab-panel" id="tab-overview">
-    <div class="kv-grid" id="ovStats"></div>
-    <div class="dash-grid">
-      <div class="dash-card">
-        <h3>📈 近 7 日采集趋势</h3>
-        <div id="chartTrend"><div class="empty-mini">暂无数据</div></div>
-      </div>
-      <div class="dash-card">
-        <h3>🏢 厂商情报分布 <span class="hint" style="font-weight:400">累计 Top 12</span></h3>
-        <div id="chartVendor"><div class="empty-mini">暂无数据</div></div>
-        <div class="tag-cloud" id="tagCloud"></div>
-      </div>
-    </div>
-    <div class="panel">
-      <h3>情报预览 <span class="hint">相关度最高的前6条</span></h3>
-      <div class="intel-grid" id="ovToday"></div>
-    </div>
-  </div>
-
-  <!-- 每日关注（后台） -->
-  <div class="tab-panel hidden" id="tab-focus">
-    <div class="focus-bar">
-      <div class="focus-head">
-        <h2>📋 每日关注</h2>
-        <span class="hint" id="focusSub">数字孪生 · 视频融合 当日行业全景</span>
-      </div>
-      <div class="focus-controls">
-        <select id="fFocusDate" title="选择日期" onchange="FOCUS_STATE.date=this.value;loadFocus();"><option value="">今日</option></select>
-        <button class="btn btn-sm" id="focusRefreshBtn" onclick="focusRefresh()">🔄 刷新</button>
-      </div>
-    </div>
-    <div class="focus-tabs" id="focusTabs"></div>
-    <div id="focusPanels"></div>
-    <div class="empty-state hidden" id="focusEmpty">
-      <div class="big">🛰️</div>
-      <div class="tip">今日暂无情报聚合数据。<br>等每日自动采集完成后，「每日关注」会自动生成当日概览。</div>
-    </div>
-  </div>
-
   <!-- 情报看板（后台） -->
-  <div class="tab-panel hidden" id="tab-hot">
+  <div class="tab-panel" id="tab-hot">
     <div class="focus-bar">
       <div class="focus-head">
         <h2>📊 情报看板</h2>
@@ -861,10 +819,10 @@ function showView(v){
 }
 function initRoute(){
   var h = location.hash;
-  // 已登录用户访问历史 hash（#focus / #hot）时，自动切到后台对应 tab
-  if(h==='#focus' || h==='#hot'){
+  // 已登录用户访问历史 hash（#hot）时，自动切到后台情报看板
+  if(h==='#hot'){
     checkAdminStatus().then(function(ok){
-      if(ok){ showView('admin'); switchTab(h.slice(1)); }
+      if(ok){ showView('admin'); switchTab('hot'); }
       else { showView('admin-login'); }
     });
     return;
@@ -1748,11 +1706,9 @@ function adminLogout(){
 }
 function switchTab(tab){
   document.querySelectorAll('#adminTabs button').forEach(function(b){b.classList.toggle('active',b.dataset.tab===tab);});
-  ['overview','focus','hot','dahua','analysis','settings','analytics','logs'].forEach(function(t){
+  ['hot','dahua','analysis','settings','analytics','logs'].forEach(function(t){
     document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab);
   });
-  if(tab==='overview') loadOverview();
-  if(tab==='focus') loadFocus();
   if(tab==='hot') loadHot();
   if(tab==='dahua') loadDahuaList();
   if(tab==='analysis') loadAnalysis();
@@ -1760,7 +1716,7 @@ function switchTab(tab){
   if(tab==='analytics'){ loadAnalytics(); loadVisitDetail(); }
   if(tab==='logs') loadLogs();
 }
-function loadAdminPanel(){ switchTab('overview'); }
+function loadAdminPanel(){ switchTab('hot'); }
 
 /* ===== 访问统计 ===== */
 var anaPeriod = 'day';
