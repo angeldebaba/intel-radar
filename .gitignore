@@ -36,3 +36,5 @@ push_auto_daily.html
 
 # Preview files
 .preview
+.cozeproj/reduction
+.codegraph
