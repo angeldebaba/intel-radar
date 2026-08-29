@@ -205,14 +205,15 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 
 ### `industry_overview.py`
 
-- **行业全局观察**看板的数据源。主体是一份打包的结构化行业研究快照（市场规模、技术三次迁移、核心技术突破、应用场景分布、中国区域格局、竞争格局、核心挑战、未来趋势，不每日变动）；顶部「今日行业观察信号」(`watch_signals`) 是**每晚基于近 7 天真实采集情报用 AI 提炼**的动态内容
+- **行业全局观察**看板的数据源。主体是一份打包的结构化行业研究快照（市场规模、技术三次迁移、核心技术突破、应用场景分布、中国区域格局、竞争格局、核心挑战、未来趋势，不每日变动）；**动态部分由 AI 每晚立足【全球整个行业前沿】研判生成**（不限于本站采集）——顶部观察信号 `watch_signals` + 六维前沿研判 `frontier`（技术/产品/市场/政策/应用/趋势）+ 一句话风向 `frontier_headline`
 - `DEFAULT_OVERVIEW`：仓库内置兜底快照，数值标注来源与年份（信通院、IDC、Gartner、MarketsandMarkets、Grand View Research 等）；不同口径数字并列展示，不盲目合并
 - `get_snapshot(date=None)`：优先读数据库 `config` 表 key=`industry_overview:YYYY-MM-DD`；没有当日则取最近一份；再没有才返回内置默认
 - `save_snapshot(data, date=None)`：后台或 AI 写入新版快照（全量覆盖；config 表只有 key/value 两列，**UPDATE 不要引用 updated_at**）
 - `list_snapshot_dates(limit=30)`：列出有快照的日期
-- `_recent_intel(days=7)` / `build_watch_signals(items)`：取近 7 天相关度≥3 情报，调 `ai._chat` 提炼 3~6 条 `{category:政策/技术/市场/案例, text}` 信号；AI 未配置/无情报/失败返回 None
-- `generate_today()`：供 `job_collect` **每晚**调用——以最近一份快照为底稿保留静态研究内容，用 AI 重写 `watch_signals`（失败则保留上一版信号），并**生成当天日期的新快照**（不再只在首次落库）
-- 前端：`watch_signals` 渲染为 `#industryBody` 顶部 `.watch-banner`（固定、不参与拖拽排序）
+- `_recent_intel(days=7)`：取近 7 天情报标题/摘要作为"近期线索"（仅锚点，**可为空**）
+- `build_frontier_briefing(clues)`：调 `ai._chat` 让 AI 以行业前沿认知为主产出 `{headline, signals[], frontier[六维]}`；线索仅作硬事实锚点，prompt 带防幻觉纪律（趋势/格局可展开，具体公司动作/融资/发布等硬事实只能引用线索、不得杜撰）；AI 未配置/失败返回 None
+- `generate_today()`：供 `job_collect` **每晚**调用——以最近一份快照为底稿保留静态研究内容，用 AI 重写 `watch_signals`/`frontier`/`frontier_headline`（失败保留上一版），并**生成当天日期的新快照**；即使 0 采集也照常产出前沿观察
+- 前端：`watch_signals`+`frontier_headline` 渲染为 `#industryBody` 顶部 `.watch-banner`（固定、不参与拖拽）；`frontier` 渲染为「🛰️ 行业前沿研判」`.frontier-grid` 六维卡片（key=`frontier`，可拖拽排序）
 - `GET /api/industry-overview`（公开，`?date=YYYY-MM-DD` 可取历史）
 - `GET /api/industry-overview/dates`
 - `POST /api/admin/industry-overview`（**需 `@require_admin`**，body `{date?, data:{...}}`）

@@ -15,8 +15,10 @@
 3) 后台可通过 POST /api/admin/industry-overview 写入新版快照；
 4) 每晚采集任务结束后 generate_today() 都会生成「当天日期」的快照：
    以最近一份快照（或内置默认）为底稿保留静态研究内容，
-   若配置了 AI_API_KEY 且近期有情报，会用 AI 基于近 7 天情报重写
-   "watch_signals"（今日行业观察信号）；AI 不可用/无情报时保留上一版信号。
+   并调用 build_frontier_briefing() —— AI 立足【整个行业前沿】（不限于本站采集）
+   产出顶部观察信号(watch_signals) + 六维前沿研判(frontier)；
+   本站近 7 天采集情报仅作为"近期线索"锚点传入，可为空；
+   AI 未配置/调用失败时保留上一版动态内容，静态内容不受影响。
 
 文件内数值尽量标注来源与年份；不同口径的数字同时呈现，
 不做盲目拼合，避免误导。
@@ -385,30 +387,47 @@ def list_snapshot_dates(limit: int = 30) -> List[str]:
     return [r["key"][prefix_len:] for r in rows if r.get("key")]
 
 
-def _recent_intel(days: int = 7, limit: int = 60) -> List[Dict[str, Any]]:
-    """读取近 N 天、相关度>=3 的情报标题+摘要，供 AI 提炼行业观察信号。"""
+def _recent_intel(days: int = 7, limit: int = 80) -> List[Dict[str, Any]]:
+    """读取近 N 天情报标题+摘要，作为 AI 前沿研判的"近期线索"（仅锚点，可为空）。"""
     try:
         start = time.strftime('%Y-%m-%d', time.localtime(time.time() - days * 86400))
+        min_rel = config.MIN_RELEVANCE if hasattr(config, 'MIN_RELEVANCE') else 3
         rows = database.query(
-            f'SELECT title, summary FROM intelligence WHERE date>={database.PH} AND relevance>={database.PH} ORDER BY relevance DESC, id DESC LIMIT {database.PH}',
-            (start, config.MIN_RELEVANCE if hasattr(config, 'MIN_RELEVANCE') else 3, limit),
+            f'SELECT title, summary, relevance FROM intelligence WHERE date>={database.PH} ORDER BY relevance DESC, id DESC LIMIT {database.PH}',
+            (start, limit),
         )
         out = []
         for r in rows:
             title = (r.get('title') or '').strip()
-            summ = (r.get('summary') or '').strip()
-            if title:
-                out.append({'title': title[:120], 'summary': summ[:220]})
+            if not title:
+                continue
+            out.append({'title': title[:120], 'summary': (r.get('summary') or '')[:200]})
         return out
     except Exception:
         return []
 
 
-def build_watch_signals(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """基于近期情报，用 AI 提炼「今日行业观察信号」。
-    返回 signals 列表；未配置 AI / 无情报 / 调用失败时返回 None（调用方保留上一版）。"""
-    if not items:
-        return None
+# 行业前沿研判的六个固定维度（立足整个行业，不局限于本站采集）
+FRONTIER_DIMS: List[Dict[str, str]] = [
+    {'key': 'tech', 'name': '技术前沿', 'icon': '🔬'},
+    {'key': 'product', 'name': '产品平台', 'icon': '🧩'},
+    {'key': 'market', 'name': '市场格局', 'icon': '📈'},
+    {'key': 'policy', 'name': '政策标准', 'icon': '📜'},
+    {'key': 'application', 'name': '应用落地', 'icon': '🏙️'},
+    {'key': 'trend', 'name': '未来趋势', 'icon': '🔮'},
+]
+_SIGNAL_CATS = ('政策', '技术', '市场', '应用', '竞争', '趋势')
+
+
+def build_frontier_briefing(clues: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """用 AI 立足【整个数字孪生/视频融合行业前沿】产出当晚的动态观察。
+
+    - 视野不局限于本站采集：AI 依据自身对全球行业的系统认知做多维研判；
+      本站近 7 天情报仅作为"近期线索"锚点（可为空）。
+    - 防幻觉：趋势判断/格局分析可基于行业常识展开；但具体公司动作、融资数字、
+      产品发布、中标事件等"硬事实"只能引用线索里出现过的，不得杜撰。
+    返回 {'signals': [...], 'frontier': [...], 'headline': str}；AI 未配置/失败返回 None。
+    """
     try:
         import ai
     except Exception:
@@ -416,49 +435,98 @@ def build_watch_signals(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not getattr(ai, 'enabled', lambda: False)():
         return None
 
-    payload = json.dumps(items, ensure_ascii=False)
+    today = _today_str()
+    clue_text = json.dumps(clues or [], ensure_ascii=False)
     prompt = (
-        '下面是近 7 天数字孪生/视频融合/智慧城市/三维可视化行业的真实情报（标题+摘要）。'
-        '请基于这些情报提炼「行业观察信号」，总结当前值得关注的行业动态、技术突破、'
-        '市场与政策趋势。严格只依据给定情报中真实存在的信息，禁止编造数字、公司、事件。\n'
-        '输出 JSON 数组（不要 markdown 代码块），3~6 条，每条格式：\n'
-        '{"category":"政策/技术/市场/案例 之一","text":"一句话观察信号，40~90字，具体、有信息量"}。\n'
-        '去重合并同类事件，优先保留涉及数字孪生/视频孪生/三维可视化/智慧城市的高价值信号；'
-        'text 用通顺中文，可保留必要英文专有名词。'
+        f'你是数字孪生/视频融合/三维可视化(CIM/BIM/GIS)/智慧城市领域的资深行业分析师。'
+        f'今天是 {today}。请立足【全球整个行业的前沿动态】做当晚观察——'
+        f'视野不要局限于给你的线索，要基于你对这个行业技术演进、头部厂商(如 NVIDIA Omniverse、'
+        f'Siemens、Dassault、Unity、51WORLD、阿里云 CIM 等)、政策标准、市场格局、落地案例的'
+        f'系统认知来研判。\n\n'
+        f'下面是"本站近 7 天采集到的线索"（可能为空或很少，仅作近期事件锚点参考）：\n'
+        f'{clue_text}\n\n'
+        f'【事实纪律】趋势方向、技术范式、竞争格局、应用价值这类"研判"可依据行业常识充分展开；'
+        f'但具体公司名+动作、融资金额、发布日期、中标金额等"硬事实"只能引用线索中出现过的，'
+        f'线索里没有的硬事件不得编造（可用"头部厂商正加速布局…"这类不点名的表述）。\n\n'
+        f'严格输出 JSON（不要 markdown 代码块），结构如下：\n'
+        f'{{"headline":"一句话总览当晚行业风向，30~60字",\n'
+        f'  "signals":[{{"category":"政策/技术/市场/应用/竞争/趋势 之一",'
+        f'"text":"一条高价值观察，40~90字，覆盖多方面、不与线索强绑定"}}，...共4~6条],\n'
+        f'  "frontier":[{{"dim":"tech|product|market|policy|application|trend 之一",'
+        f'"title":"该维度前沿要点，≤20字","points":["要点1，40~80字","要点2","要点3"]}}，...6个维度各一个]}}\n'
+        f'frontier 必须覆盖全部 6 个维度(tech技术前沿/product产品平台/market市场格局/'
+        f'policy政策标准/application应用落地/trend未来趋势)，每个维度 2~3 条要点。'
+        f'全部用通顺中文，可保留必要英文专有名词(如 Omniverse、OpenUSD、3DGS、Gartner)。'
     )
     try:
-        raw = ai._chat([
-            {'role': 'user',
-             'content': payload + '\n\n' + prompt},
-        ], timeout=90)
-        arr = ai._extract_json(raw)
+        raw = ai._chat([{'role': 'user', 'content': prompt}], timeout=120)
+        obj = json.loads(_extract_first_json(raw))
     except Exception as exc:
-        database.log('collect', '行业观察信号 AI 提炼失败，保留上一版信号: {}'.format(exc), 'warn')
+        database.log('collect', '行业前沿观察 AI 生成失败，保留上一版: {}'.format(exc), 'warn')
         return None
 
-    _CAT_WHITELIST = ('政策', '技术', '市场', '案例')
+    # 顶部信号
     signals: List[Dict[str, Any]] = []
-    for obj in arr:
-        if not isinstance(obj, dict):
+    for s in (obj.get('signals') or []):
+        if not isinstance(s, dict):
             continue
-        cat = str(obj.get('category') or '动态').strip()
-        if cat not in _CAT_WHITELIST:
-            cat = '动态'
-        text = str(obj.get('text') or '').strip()
-        if len(text) < 8 or len(text) > 200:
-            continue
-        signals.append({'category': cat, 'text': text[:200]})
+        cat = str(s.get('category') or '趋势').strip()
+        if cat not in _SIGNAL_CATS:
+            cat = '趋势'
+        text = str(s.get('text') or '').strip()
+        if 8 <= len(text) <= 200:
+            signals.append({'category': cat, 'text': text[:200]})
         if len(signals) >= 6:
             break
-    return signals or None
+
+    # 六维前沿研判：按 FRONTIER_DIMS 固定顺序建槽，再按 key 精确填充
+    frontier = [{'key': d['key'], 'name': d['name'], 'icon': d['icon'],
+                 'title': '', 'points': []} for d in FRONTIER_DIMS]
+    slot_by_key = {x['key']: x for x in frontier}
+    for f in (obj.get('frontier') or []):
+        if not isinstance(f, dict):
+            continue
+        slot = slot_by_key.get(str(f.get('dim') or '').strip().lower())
+        if not slot:
+            continue
+        slot['title'] = str(f.get('title') or '').strip()[:30]
+        pts = []
+        for p in (f.get('points') or []):
+            p = str(p or '').strip()
+            if 8 <= len(p) <= 200:
+                pts.append(p[:200])
+            if len(pts) >= 3:
+                break
+        slot['points'] = pts
+
+    headline = str(obj.get('headline') or '').strip()[:120]
+
+    if not signals and not any(f['points'] for f in frontier):
+        return None
+    return {'headline': headline, 'signals': signals, 'frontier': frontier}
+
+
+def _extract_first_json(text: str) -> str:
+    """从模型输出中截取第一个完整 JSON 对象（容忍 markdown 代码块包裹）。"""
+    text = (text or '').strip()
+    if text.startswith('```'):
+        text = text.strip('`')
+        if text[:4].lower() == 'json':
+            text = text[4:]
+    s = text.find('{')
+    e = text.rfind('}')
+    if s < 0 or e <= s:
+        raise ValueError('输出中未找到 JSON 对象')
+    return text[s:e + 1]
 
 
 def generate_today() -> Optional[str]:
     """供 job_collect 每晚调用：生成「当天日期」的行业观察快照。
 
     - 以最近一份快照（无则内置 DEFAULT_OVERVIEW）为底稿，保留静态研究内容；
-    - 若配置了 AI_API_KEY 且近 7 天有情报，用 AI 重写 watch_signals（行业观察信号）；
-      AI 不可用/无情报时保留上一版信号，静态内容不受影响。
+    - 调 build_frontier_briefing()：AI 立足整个行业前沿产出顶部信号 + 六维研判，
+      本站近 7 天采集情报仅作"近期线索"锚点（可为空），故即使 0 采集也照常产出；
+      AI 未配置/调用失败时保留上一版动态内容，静态内容不受影响。
     返回当天日期字符串；失败返回 None。
     """
     today = _today_str()
@@ -468,14 +536,16 @@ def generate_today() -> Optional[str]:
         base.pop('_source', None)
         base.pop('_date', None)
 
-        items = _recent_intel(days=7)
-        signals = build_watch_signals(items)
-        if signals:
-            base['watch_signals'] = signals
-            print('[industry_overview] 今日行业观察信号已由 AI 提炼：{} 条（基于近7天 {} 条情报）'.format(
-                len(signals), len(items)))
+        clues = _recent_intel(days=7)
+        briefing = build_frontier_briefing(clues)
+        if briefing:
+            base['watch_signals'] = briefing['signals']
+            base['frontier'] = briefing['frontier']
+            base['frontier_headline'] = briefing['headline']
+            print('[industry_overview] 行业前沿观察已由 AI 生成：信号 {} 条、六维研判；'
+                  '近期线索 {} 条'.format(len(briefing['signals']), len(clues)))
         else:
-            print('[industry_overview] 本次未更新信号（AI 未配置/无近期情报/调用失败），保留上一版')
+            print('[industry_overview] 本次未更新前沿观察（AI 未配置/调用失败），保留上一版')
 
         base['date'] = today
         base['generated_at'] = time.strftime('%Y-%m-%dT%H:%M:%S')
