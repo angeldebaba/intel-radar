@@ -36,8 +36,14 @@ SYSTEM_PROMPT = (
     '只依据标题与摘要中真实存在的信息，禁止编造数字和事实；'
     '当原文信息极少、不足120字时，必须围绕该主题补充行业背景解读（如技术应用趋势、'
     '典型场景价值、赛道竞争格局）写足120字，禁止直接缩短。\n'
+    '注意：部分资讯为英文来源（如 digital twin / smart city / IoT / Omniverse 等），'
+    '摘要必须用中文撰写，可保留必要的英文专有名词/产品名。\n'
+    '3. title 字段：若原标题是英文（或含大段英文），翻译成简洁、通顺、符合中文科技媒体习惯的'
+    '中文标题（保留 NVIDIA、Omniverse、IoT 等通用专有名词/产品名/缩写）；若原标题已是中文，'
+    '则原样返回，不要改写。\n'
     '严格输出 JSON 数组（不要 markdown 代码块），每项格式：\n'
     '{"id": 编号, "keep": true/false, "score": 0-5, '
+    '"title": "中文标题（英文则翻译，中文则原样）", '
     '"summary": "情报速览（120~200字）", "tags": ["最多3个，从 技术/方案/政策/竞品/案例/展会 中选"]}\n'
     '数组顺序与输入一致，一条不能少。'
 )
@@ -119,7 +125,8 @@ def analyze_batch(items):
     """批量分析情报。
 
     参数 items: [{'title':..., 'summary':..., 'vendor':...}, ...]
-    返回: 与输入等长的列表，每项 {'keep':bool,'score':int,'summary':str,'tags':[..]}；
+    返回: 与输入等长的列表，每项 {'keep':bool,'score':int,'title':str(中文标题/译名),
+          'summary':str,'tags':[..]}；
           未配置 Key 或调用失败时返回 None（调用方降级）。
     """
     if not enabled() or not items:
@@ -153,6 +160,7 @@ def analyze_batch(items):
                 results[idx] = {
                     'keep': bool(obj.get('keep', True)),
                     'score': max(0, min(5, int(obj.get('score', 3)))),
+                    'title': str(obj.get('title') or '')[:200],
                     'summary': str(obj.get('summary') or '')[:400],
                     'tags': [str(t)[:10] for t in (obj.get('tags') or [])][:3],
                 }
@@ -160,8 +168,8 @@ def analyze_batch(items):
                 results = _repair_short(items, results)
                 return results
             # 有缺失项：缺失的用哨兵值标记（score=-1 表示无 AI 结果，调用方回退关键词逻辑）
-            return [r if r is not None else {'keep': True, 'score': -1, 'summary': '',
-                                              'tags': []} for r in results]
+            return [r if r is not None else {'keep': True, 'score': -1, 'title': '',
+                                              'summary': '', 'tags': []} for r in results]
         except Exception as e:
             if attempt == 1:
                 time.sleep(2)

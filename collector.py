@@ -23,10 +23,13 @@ import database
 import ai
 
 # 更完整的浏览器请求头，模拟真实 Chrome
+# 注意：不声明 'br'（brotli）压缩。requests 原生仅支持 gzip/deflate，解压 br
+# 需额外安装 brotli 包；未安装时 requests 会原样返回压缩字节导致乱码、解析 0 条
+# （必应 cn.bing.com 默认返回 br，是历史"必应0结果"的根因之一）。
 BASE_HEADERS = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
-    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Encoding': 'gzip, deflate',
     'DNT': '1',
     'Connection': 'keep-alive',
     'Upgrade-Insecure-Requests': '1',
@@ -1372,18 +1375,31 @@ def fetch_rss_source(src, max_results=None):
         text = (title + ' ' + summary).lower()
         if keywords and not any(kw.lower() in text for kw in keywords):
             continue
-        # 发布时间
+        # 发布时间：优先用 feedparser 已解析的结构化时间（国际源多为 RFC822/ISO，
+        # 正则提取易失败）；再退回到原始字符串正则抽取
         published = ''
-        for tk in ('published', 'updated', 'created'):
-            v = ent.get(tk)
-            if v:
-                published = _norm_date(_extract_date(str(v))) or _extract_date(str(v))
-                if published:
+        for tk in ('published_parsed', 'updated_parsed', 'created_parsed'):
+            tup = ent.get(tk)
+            if tup:
+                try:
+                    published = '%04d-%02d-%02d' % (tup.tm_year, tup.tm_mon, tup.tm_mday)
                     break
+                except Exception:
+                    pass
+        if not published:
+            for tk in ('published', 'updated', 'created'):
+                v = ent.get(tk)
+                if v:
+                    published = _norm_date(_extract_date(str(v))) or _extract_date(str(v))
+                    if published:
+                        break
         items.append({
             'title': title,
             'url': link,
+            # summary 截断用于展示；description 保留完整文本供相关度评分/AI 分析使用，
+            # 避免数字孪生等核心词出现在 300 字之后导致降级评分漏判
             'summary': summary[:300] if summary else title,
+            'description': summary,
             'source': src['name'],
             'published': published,
             'vendor': src.get('vendor', ''),
@@ -1504,19 +1520,28 @@ def fetch_query(query, vendor_name='', max_results=6, use_official=True, use_sea
 # ==================== 评分与标签（与之前保持一致） ====================
 
 def score_relevance(title, desc):
-    """按关键词匹配给相关度打分 1-5"""
-    text = (title + ' ' + desc).lower()
+    """按关键词匹配给相关度打分 1-5。
+
+    计分逻辑：HIGH（数字孪生/视频融合/3D 等核心词）命中即 3 分入库线，
+    MEDIUM（智慧城市/仿真/AR 等）+2，LOW（物联网/传感器/机器人等）+1。
+    核心词出现在标题再 +1（标题命中比正文命中相关性更强）。
+    英文源（digital twin / smart city / iot ...）走同一套权重。
+    """
+    title = (title or '').lower()
+    text = (title + ' ' + (desc or '')).lower()
+
+    high_hits = [kw for kw in config.RELEVANCE_HIGH if kw.lower() in text]
+    med_hits = [kw for kw in config.RELEVANCE_MEDIUM if kw.lower() in text]
+    low_hits = [kw for kw in config.RELEVANCE_LOW if kw.lower() in text]
+
     score = 0
-    for kw in config.RELEVANCE_HIGH:
-        if kw.lower() in text:
-            score += 2
-    for kw in config.RELEVANCE_MEDIUM:
-        if kw.lower() in text:
-            score += 1
-    for kw in config.RELEVANCE_LOW:
-        if kw.lower() in text:
-            score += 0.5
-    score = int(round(score))
+    if high_hits:
+        score += 3                      # 核心词命中即达入库线
+    score += min(2, len(med_hits)) * 1  # 中等相关词，最多 +2
+    score += min(2, len(low_hits)) * 1  # 弱相关词，最多 +2（凑满相关度）
+    # 核心词出现在标题，相关性更强
+    if any(kw.lower() in title for kw in high_hits):
+        score += 1
     return max(1, min(5, score))
 
 
@@ -1735,6 +1760,12 @@ def collect_once():
                     continue
                 ai_summary = (r.get('summary') or '').strip()
                 summary = ai_summary if ai_summary else raw_summary[:200]
+                # 标题：仅当原标题为英文（不含中文）且 AI 返回了中文译名时替换；
+                # 中文标题保持原样，不做任何改写
+                ai_title = (r.get('title') or '').strip()
+                if (ai_title and re.search(r'[\u4e00-\u9fff]', ai_title)
+                        and not re.search(r'[\u4e00-\u9fff]', title)):
+                    title = ai_title
                 rel = max(1, r['score'])
                 tags = r.get('tags') or detect_tags(title, raw_summary)
             else:

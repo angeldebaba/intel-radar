@@ -1,4 +1,4 @@
-# 🔄 HANDOFF — 项目现场快照（2026-08-27）
+# 🔄 HANDOFF — 项目现场快照（2026-08-29）
 
 > 换电脑 / 换环境恢复现场用。配合 README.md（用户向）和 AGENTS.md（开发者向）阅读：
 > README 讲怎么跑、AGENTS 讲怎么改、本文件讲"现在进行到哪了"。
@@ -25,9 +25,16 @@
 
 ## 三、最近完成的工作（按时间倒序，节选）
 
+0. **2026-08-29 采集源修复与扩充（针对"连续两晚 0 条"）**
+   - **修复必应 0 条 BUG**：请求头 `Accept-Encoding` 声明了 `br`(brotli) 但环境未装 brotli 包，requests 返回未解压字节导致乱码、必应解析全 0；改为只声明 `gzip, deflate` 后必应恢复正常（实测解析出结果）。
+   - **RSS 源失效处理**：实测确认中新网 scroll-news 是综合滚动频道（科技命中≈0）、人民网 scitech feed 停更（最新 2025-04，全被 30 天时效过滤）、新华网 tech feed 冻结在 2022。**这三个"官媒源"是导致 RSS 零产出的根因，不是正常过滤。**
+   - **扩充 RSS 源（国内外共 8 个，全部实测可抓、日期新鲜）**：国内 36氪/雷锋网（带全文摘要）；海外 IoTAnalytics、IoTTechNews、SmartCitiesDive、NVIDIA Blog、Unity Blog、SyncedReview（机器之心英文站），英文关键词过滤，AI 摘要强制输出中文。
+   - **英文相关度支持**：`RELEVANCE_HIGH/MEDIUM/LOW` 加入 digital twin / smart city / iot / omniverse 等英文词；`score_relevance()` 重构权重（HIGH 命中即 3 分入库线，标题命中 +1），RSS 完整正文存入 `description` 供评分/AI 使用；RSS 日期改用 feedparser 结构化 `published_parsed`（国际 RFC822/ISO 更可靠）。
+   - 沙箱实测（降级关键词评分口径）每天约 9 条可入库；生产环境 AI（glm-4-flash）打分召回率更高。
+   - 说明：搜狗在云端机房 IP 被风控熔断属外部反爬，非代码 bug；必应修复后成为更稳的搜索补充源。
 1. **公开页「🌐 行业观察」全局看板** —— 新增 `industry_overview.py`，**行业研究视角**（与本站抓取数据解耦），含全球/中国市场规模、技术三次迁移、2026 核心技术突破、应用场景分布、中国区域格局、竞争格局（全球头部 + 中国第一梯队）、核心挑战与风险、未来 6 大趋势；数据来自信通院/IDC/Gartner/MarketsandMarkets 等公开报告并标注来源；打包在 `DEFAULT_OVERVIEW` 兜底，后台可通过 `POST /api/admin/industry-overview` 写入新版本覆盖；每晚采集任务结束后自动把内置快照落库一次（`config` 表 key=`industry_overview:YYYY-MM-DD`）；前端 hash 路由 `#industry`
 2. **「📋 每日关注」「📊 情报看板」收紧到后台** —— 公开页只保留情报流 + 「🌐 行业观察」；两个内部看板移到后台侧边栏 Tab，对应 `/api/daily-focus*`、`/api/hot-stats*` 全部加 `@require_admin`，未登录返回 401；历史 hash `#focus` / `#hot` 会自动检测登录态，已登录则跳到后台对应 Tab，未登录跳登录页
-3. **采集数据源扩充** —— 新增 RSS/Atom 直采（`feedparser`，`config.RSS_SOURCES`：中新网科技/人民网科技/新华网科技，按关键词过滤）；新增行业媒体与公众号品牌词搜索阶段（`INDUSTRY_MEDIA_QUERIES`，20 条覆盖泰伯网/36氪/智东西/机器之心/微信公众号等）；`collect_once()` 由三阶段扩展为五阶段（官网→厂商搜索→行业搜索→媒体/公众号搜索→RSS）
+3. **采集数据源扩充** —— RSS/Atom 直采（`feedparser`，`config.RSS_SOURCES`，2026-08-29 更新为 36氪/雷锋网 + 6 个海外数字孪生/智慧城市/IoT 源）；行业媒体与公众号品牌词搜索阶段（`INDUSTRY_MEDIA_QUERIES`）；`collect_once()` 五阶段（官网→厂商搜索→行业搜索→媒体/公众号搜索→RSS）
 4. **「每日关注」五维度聚合（后台）** —— 行业动态/产品/技术/市场/关注点当日聚合，`daily_focus.py` 生成快照存 `config` 表，采集完成后自动刷新
 5. **内容质量门禁** —— `quality_verdict()` 拦截"仅含链接无实质文本"的低质条目，进 `quarantine` 表备查，后台可审查/深抓复检/恢复入库
 6. **全文存档 + 原文查看** —— `article_archive` 表保存净化 HTML 与纯文本，`/article/<id>` 可本地回看（防原文链接过期/反爬）

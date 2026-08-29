@@ -171,26 +171,74 @@ INDUSTRY_MEDIA_QUERIES = [
 
 # RSS/Atom 直采源（行业媒体稳定 feed；单源失败不影响其他）
 # name: 来源名；url: feed 地址；vendor: 归类厂商（媒体源留空）；keywords: 命中其一才保留
+#
+# 维护记录：
+#  - 2026-08-28 修正人民网/新华网 feed（tech.xml 404、时政频道错配）
+#  - 2026-08-29 实测发现：中新网 scroll-news 为综合滚动频道（科技命中≈0）、
+#    人民网 scitech feed 停更（最新 2025-04）、新华网 tech feed 冻结在 2022。
+#    三个官媒 feed 均无法产出新鲜情报，故替换为持续更新的科技/行业媒体，
+#    并新增海外数字孪生/智慧城市/物联网/3D 可视化垂直源（英文关键词）。
+# 校验方法：python3 -c "import feedparser; ..." 确认 status=200 且最新条目日期为近期。
 RSS_SOURCES = [
-    # 36氪 智能硬件/智慧城市频道（无固定 feed 时走搜索引擎，RSS 留作可选）
-    # 以下为公开可验证的 RSS/Atom；如有失效，collector 会自动记录日志跳过
-    {'name': '中国新闻网-科技', 'url': 'https://www.chinanews.com.cn/rss/scroll-news.xml',
-     'vendor': '', 'keywords': ['数字孪生', '视频融合', '三维可视化', '智慧城市', '智慧园区']},
-    {'name': '人民网-科技', 'url': 'http://www.people.com.cn/rss/tech.xml',
-     'vendor': '', 'keywords': ['数字孪生', '视频融合', '智慧城市', '人工智能']},
-    {'name': '新华网-科技', 'url': 'http://www.xinhuanet.com/politics/news_politics.xml',
-     'vendor': '', 'keywords': ['数字孪生', '智慧城市', '科技']},
+    # ===== 国内科技 / 行业媒体（每日更新，中文关键词；仅保留 RSS 带全文摘要的源）=====
+    {'name': '36氪', 'url': 'https://www.36kr.com/feed',
+     'vendor': '', 'keywords': ['数字孪生', '智慧城市', '智慧园区', '物联网', '三维可视化',
+                                 '视频融合', '数字经济', '人工智能', '低空经济', '车路云',
+                                 '机器人', '具身智能', '自动驾驶']},
+    {'name': '雷锋网', 'url': 'https://www.leiphone.com/feed',
+     'vendor': '', 'keywords': ['数字孪生', '视频融合', '智慧城市', '物联网',
+                                 '三维', '人工智能', '智能驾驶', '机器人', '具身智能',
+                                 '自动驾驶', '边缘计算', '视觉']},
+
+    # ===== 海外垂直媒体 / 厂商技术博客（英文关键词，AI 摘要会提炼为中文）=====
+    # 物联网 / 数字孪生行业研究（数字孪生市场、工业 IoT）
+    {'name': 'IoTAnalytics', 'url': 'https://iot-analytics.com/feed/',
+     'vendor': '', 'keywords': ['digital twin', 'iot', 'industrial iot', 'edge',
+                                 'smart city', 'sensor', 'simulation']},
+    {'name': 'IoTTechNews', 'url': 'https://iottechnews.com/feed/',
+     'vendor': '', 'keywords': ['digital twin', 'iot', 'smart city', 'sensor',
+                                 'edge', 'simulation', 'autonomous', 'robotics']},
+    # 智慧城市（数字孪生城市；去掉尾空格的 'ai '，改用明确词）
+    {'name': 'SmartCitiesDive', 'url': 'https://www.smartcitiesdive.com/feeds/news/',
+     'vendor': '', 'keywords': ['digital twin', 'smart city', 'smart cities', 'iot',
+                                 'sensor', '3d', 'simulation', 'geospatial',
+                                 'autonomous', 'connected vehicle']},
+    # NVIDIA Omniverse / 实时仿真 / 物理 AI / 机器人
+    {'name': 'NVIDIABlog', 'url': 'https://blogs.nvidia.com/feed/',
+     'vendor': '', 'keywords': ['digital twin', 'omniverse', 'simulation', 'robotics',
+                                 'autonomous', '3d', 'real-time', 'physical ai',
+                                 'self-driving', 'factory']},
+    # Unity 实时 3D / 数字孪生引擎（收窄：去掉过宽的 3d/engine/spatial，保留孪生/仿真/AR）
+    {'name': 'UnityBlog', 'url': 'https://blog.unity.com/feed',
+     'vendor': '', 'keywords': ['digital twin', 'real-time 3d', 'simulation',
+                                 'visualization', 'augmented reality', 'metaverse',
+                                 'virtual reality', 'immersive']},
+    # 机器之心英文站（AI 前沿，全文摘要；关键词收窄到与物理世界/视觉/仿真相关）
+    {'name': 'SyncedReview', 'url': 'https://syncedreview.com/feed/',
+     'vendor': '', 'keywords': ['robot', 'robotics', 'autonomous', 'vision', '3d',
+                                 'simulation', 'embodied', 'digital twin', 'sensor',
+                                 'video', 'physical', 'self-driving', 'drone']},
 ]
 
 # RSS 抓取上限：每个源最多保留的条目数（关键词过滤后通常远少于此）
 RSS_MAX_PER_SOURCE = 10
 
 # 相关度评分关键词（2026-08-23: 新增 视频孪生/三维/可视化 入 HIGH，与 MIN_RELEVANCE=3 配合，
-# 核心词单独命中即达入库线；三维/可视化 同时保留在 MEDIUM 形成叠加计分）
+# 核心词单独命中即达入库线；三维/可视化 同时保留在 MEDIUM 形成叠加计分。
+# 2026-08-29: 新增英文数字孪生/仿真/智慧城市词，支持海外 RSS 源在 AI 降级路径下评分）
 RELEVANCE_HIGH = ['数字孪生', '视频融合', '三维可视化', '三维引擎', '数字底座', '孪生底座', '时空底座',
-                  '视频孪生', '三维', '可视化']
-RELEVANCE_MEDIUM = ['智慧医院', '智慧校园', '智慧园区', '可视化', '三维', 'BIM', 'GIS', 'CIM', '孪生', '元宇宙']
-RELEVANCE_LOW = ['安防', '监控', '摄像头', '物联网', 'AI', '人工智能', '大模型', '云平台']
+                  '视频孪生', '三维', '可视化',
+                  'digital twin', 'digital twins', 'omniverse', '3d visualization',
+                  'video fusion', 'digital twin city']
+# MEDIUM 里的词与 HIGH 叠加计分：中文"三维/可视化"、英文"3d/simulation/smart city"
+# 命中后可把单个 HIGH 词从 2 分补到 3 分（达 MIN_RELEVANCE 入库线）
+RELEVANCE_MEDIUM = ['智慧医院', '智慧校园', '智慧园区', '可视化', '三维', 'BIM', 'GIS', 'CIM', '孪生', '元宇宙',
+                    '智慧城市', '数字城市', '车路云',
+                    'smart city', 'smart cities', 'simulation', 'simulate', 'augmented reality',
+                    'virtual reality', 'geospatial', 'real-time 3d', '3d ', 'spatial computing']
+RELEVANCE_LOW = ['安防', '监控', '摄像头', '物联网', 'AI', '人工智能', '大模型', '云平台',
+                 'iot', 'sensor', 'edge computing', 'robotics', 'autonomous',
+                 'self-driving', 'digital transformation', 'factory', 'drone']
 
 # 标签分类
 TAGS = ['技术', '方案', '政策', '竞品', '案例', '展会']

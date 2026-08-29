@@ -51,8 +51,11 @@ intel-radar/
 ├── templates/
 │   └── index.html      # 唯一前端页面（~1600 行，内嵌 JS/CSS）
 ├── deploy/
-│   └── tcb_deploy.py   # CloudBase OpenAPI 部署脚本（GitHub Actions 调用）
-├── .github/workflows/deploy.yml   # main 分支 push 即自动部署
+│   ├── tcb_deploy.py    # CloudBase OpenAPI 部署脚本（GitHub Actions 调用）
+│   └── tcb_scale.py     # CloudBase 副本数运维脚本（--status 查询 / --fix-one 固定单实例）
+├── .github/workflows/
+│   ├── deploy.yml       # main 分支 push 即自动部署
+│   └── ops-scale.yml    # 手动触发：Actions → "Ops - CloudBase Scale" 查询/固定副本数
 ├── Dockerfile          # CloudBase 镜像（python:3.11-slim + gunicorn）
 ├── render.yaml         # （历史遗留）Render 蓝图，已迁 CloudBase
 ├── Procfile            # 通用 PaaS 启动命令
@@ -133,6 +136,18 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 
 保持 **1 个实例**。代码里已有跨实例防重跑锁（`_job_lock_acquire`），但多实例仍可能让 Web 访问行为不一致，单实例最省心。
 
+**检查/固定实例数**（推荐走 GitHub Actions，无需本地配密钥）：
+1. GitHub 仓库 → Actions 标签页 → 左侧选 **"Ops - CloudBase Scale"** → Run workflow
+   - `action=status`：只查询，不改动（看 MinNum/MaxNum/在线 Pod）
+   - `action=fix-one`：直接固定为 1 个实例（MinNum=1, MaxNum=1, manualScale）
+2. 或本地跑（需先 `export TENCENT_SECRET_ID/KEY`）：
+   ```bash
+   python3 deploy/tcb_scale.py --status
+   python3 deploy/tcb_scale.py --fix-one
+   ```
+   脚本只改 Items 配置（副本数+运行模式），DeployInfo 用已在线镜像占位，**不会触发镜像重新构建**。
+3. 控制台兜底路径：云托管 → 服务 `angel` → 服务设置 → 副本设置 → 最小 1 / 最大 1 / 手动调节。
+
 ---
 
 ## 六、核心模块速查
@@ -151,7 +166,8 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 - `OFFICIAL_CONFIG`：**9 家**厂商官网新闻/方案页清单（VENDORS 有 12 家，部分厂商只走搜索引擎）
 - `fetch_official_page` → `_parse_structured_list` / `_parse_generic_links`：通用列表页解析
 - 搜索引擎：`fetch_sogou_web` / `fetch_bing` / `fetch_baidu_news`，每个引擎都有 `_engine_blocked` 节流（被反爬自动跳过）
-- `fetch_rss_source` / `fetch_all_rss`：行业媒体 RSS/Atom 直采（feedparser），按 `config.RSS_SOURCES` 关键词过滤
+- `fetch_rss_source` / `fetch_all_rss`：行业媒体 RSS/Atom 直采（feedparser），按 `config.RSS_SOURCES` 关键词过滤；feed 完整正文存 `description` 供评分/AI 使用
+- 注意请求头 `Accept-Encoding` 只声明 `gzip, deflate`（**不能加 `br`**）：requests 原生不解压 brotli，必应默认返回 br 会导致乱码、解析 0 条
 - `collect_once()`：主编排，五阶段顺序执行——A. 官网 → B. 厂商×关键词搜索 → C. 行业专项搜索 → D. 行业媒体/公众号品牌词搜索 → E. RSS 直采；全局按 URL 去重
 - `quality_verdict()`：内容质量门禁，不过的进 `quarantine` 表（不直接丢）
 - `_enrich_article_media`：抓原文页提取 og:image / 视频 / 正文外链追溯
@@ -168,6 +184,7 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 ### `ai.py`
 
 - `SYSTEM_PROMPT` 强约束：每条 summary 必须 120~200 汉字、三段结构、严格 JSON
+- 英文来源：AI 返回中文 summary + 中文 title（英文标题翻译、中文标题原样）；`analyze_batch()` 结果含 `title` 字段，collector 入库与 app.py reprocess 仅在**原标题为英文且译名含中文**时替换标题
 - `analyze_batch()` 返回与输入等长的列表；失败返回 `None` 让调用方降级
 - `_repair_short()`：对 <100 字的摘要做一轮补写重试
 - 切换模型：改环境变量 `AI_API_BASE` / `AI_MODEL` 即可（例如 DeepSeek：`AI_API_BASE=https://api.deepseek.com/v1`、`AI_MODEL=deepseek-chat`）

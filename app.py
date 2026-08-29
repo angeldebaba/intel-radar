@@ -1046,11 +1046,22 @@ def _run_reprocess():
                 else:
                     new_sum = (x.get('summary') or '').strip() or r['summary']
                     new_tags = x.get('tags') or json.loads(r['tags'] or '[]')
-                    database.execute(
-                        'UPDATE intelligence SET summary=?, tags=?, relevance=? '
-                        'WHERE id=?',
-                        (new_sum, json.dumps(new_tags, ensure_ascii=False),
-                         score, r['id']))
+                    # AI 对英文标题返回中文译名；仅当原标题为英文且译名含中文时才更新
+                    new_title = (x.get('title') or '').strip()
+                    if (new_title and re.search(r'[\u4e00-\u9fff]', new_title)
+                            and not re.search(r'[\u4e00-\u9fff]', r['title'] or '')):
+                        database.execute(
+                            'UPDATE intelligence SET title=?, summary=?, tags=?, relevance=? '
+                            'WHERE id=?',
+                            (new_title, new_sum,
+                             json.dumps(new_tags, ensure_ascii=False),
+                             score, r['id']))
+                    else:
+                        database.execute(
+                            'UPDATE intelligence SET summary=?, tags=?, relevance=? '
+                            'WHERE id=?',
+                            (new_sum, json.dumps(new_tags, ensure_ascii=False),
+                             score, r['id']))
                     st['updated'] += 1
                 st['done'] += 1
             st['log'].append('已处理 {}/{}'.format(st['done'], st['total']))
