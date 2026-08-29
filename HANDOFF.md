@@ -25,7 +25,11 @@
 
 ## 三、最近完成的工作（按时间倒序，节选）
 
-0. **2026-08-29 行业观察"立足行业前沿"重构（用户明确：维度与内容不限于采集信息）**
+0. **2026-08-29 采集源回退国内 + 「展开原文」改为真正全文**
+   - **采集源回退**：用户反馈接入海外英文 RSS 源后，最新几篇外文内容相关度都很低。已移除 6 个海外源（IoTAnalytics/IoTTechNews/SmartCitiesDive/NVIDIABlog/UnityBlog/SyncedReview），`RSS_SOURCES` 仅保留国内 **36氪 + 雷锋网**；`RELEVANCE_HIGH/MEDIUM/LOW` 里为海外源新增的宽泛英文词（iot/sensor/3d/robotics/smart city 等）一并回退，仅留 digital twin/omniverse 高精准英文专有词兜底。英文标题翻译、英文 AI 摘要等能力保留（不影响）。
+   - **「展开原文」改造**：原先卡片「展开原文」展开的是 `description` 字段（RSS 条目≈全文，但搜索/官网条目只是约 200 字的搜索摘要 snippet，名不副实）。现改为：**有本地存档的条目（`has_archive`）点击「展开原文」走新接口 `GET /api/article/<id>/text` 懒加载 `article_archive.plain_text` 真正全文**（上限 2 万字、保留换行、独立滚动样式 `.archive-full`）；无存档/加载失败回退到 `description`。点标题仍是 `/article/<id>` 完整存档页。
+   - 沙箱实测：两个国内源 HTTP 200（36氪≈30 条、雷锋网≈20 条）；接口有存档返回全文（含换行）、无存档 `ok=false`；py_compile + node --check 通过。
+1. **2026-08-29 行业观察"立足行业前沿"重构（用户明确：维度与内容不限于采集信息）**
    - **背景**：用户强调行业观察要立足整个行业前沿，不能局限于本站采集到的情报。此前 watch_signals 只从近 7 天采集情报提炼，采集 0 条就空白，视野太窄。
    - **重构**：新增 `build_frontier_briefing(clues)`——AI 以对全球数字孪生/视频融合行业的系统认知为主做前沿研判，本站近 7 天采集仅作"近期线索"锚点（`_recent_intel`，可为空，不再做相关度硬过滤）。一次 AI 调用产出三部分：
      - `frontier_headline`：一句话当晚行业风向；

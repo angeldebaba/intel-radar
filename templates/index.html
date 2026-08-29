@@ -78,6 +78,9 @@ header.topbar{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.92);ba
 .card-summary{color:var(--text2);font-size:13px;line-height:1.75;}
 .card-summary.clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;}
 .card-summary.expanded{display:block;-webkit-line-clamp:unset;}
+.card-summary.archive-full{white-space:pre-wrap;background:rgba(255,255,255,.025);
+  border:1px solid var(--border);border-left:3px solid var(--blue,#58a6ff);
+  border-radius:8px;padding:10px 12px;margin-top:6px;max-height:420px;overflow-y:auto;font-size:12.5px;line-height:1.8;}
 
 /* ===== 原文媒体（图片画廊 / 视频） ===== */
 .card-media{display:flex;flex-direction:column;gap:8px;}
@@ -1784,9 +1787,14 @@ function cardHtml(it){
     }
     mediaHtml += '</div>';
   }
-  // 展开按钮：有 AI 摘要且原文更长 → 展开原文；无 AI 摘要且原文被折叠 → 展开全文
+  // 展开按钮：
+  //  - 有本地存档(has_archive)：展开真正的全文存档（/api/article/<id>/text 懒加载）
+  //  - 无存档但有 AI 摘要且原文片段更长：展开 description（搜索摘要/RSS片段）
+  //  - 无 AI 摘要且原文被折叠：展开全文
   var expandBtn = '';
-  if(hasAI && it.description.length > sumText.length + 10){
+  if(it.has_archive){
+    expandBtn = '<button class="expand-btn" data-label="展开原文" onclick="toggleArchive('+it.id+',this)">展开原文</button>';
+  } else if(hasAI && it.description && it.description.length > sumText.length + 10){
     expandBtn = '<button class="expand-btn" data-label="展开原文" onclick="toggleSummary('+it.id+',this)">展开原文</button>';
   } else if(!it.summary && clampCls){
     expandBtn = '<button class="expand-btn" data-label="展开全文" onclick="toggleSummary('+it.id+',this)">展开全文</button>';
@@ -1819,6 +1827,44 @@ function toggleSummary(id,btn){
     btn.textContent='收起';
     if(it && it.description && it.description.length>(it.summary||'').length) el.textContent=it.description;
   }
+}
+/* 展开原文：优先懒加载本地存档的真正全文（article_archive.plain_text）；
+   无存档/加载失败时回退到 AI 提炼前的原始片段 description */
+var _archCache={};
+function toggleArchive(id,btn){
+  var el=document.getElementById('sum-'+id), it=INTEL_STORE[id];
+  if(el.classList.contains('expanded')){
+    el.classList.remove('expanded'); btn.textContent=btn.dataset.label||'展开原文';
+    if(it) el.textContent=(it.summary||it.description||'');
+    return;
+  }
+  el.classList.add('expanded');
+  if(!btn.dataset.label) btn.dataset.label=btn.textContent;
+  btn.textContent='收起';
+  function fallback(){
+    if(it && it.description && it.description.length>(it.summary||'').length){
+      el.textContent=it.description;
+    } else if(it){
+      el.textContent=(it.summary||it.description||'');
+    }
+  }
+  if(_archCache[id]!=null){
+    el.textContent=_archCache[id] || (it&&it.description) || '';
+    if(!_archCache[id]) fallback();
+    return;
+  }
+  var old=el.textContent;
+  el.textContent='正在加载原文…';
+  fetch('/api/article/'+id+'/text').then(function(r){return r.json();}).then(function(j){
+    if(j && j.ok && j.text){
+      _archCache[id]=j.text;
+      el.textContent=j.text + (j.truncated?'\n…（原文较长，已截断；点标题查看完整存档）':'');
+      el.classList.add('archive-full');
+    } else {
+      _archCache[id]='';
+      fallback();
+    }
+  }).catch(function(){ _archCache[id]=''; fallback(); });
 }
 /* 原文媒体：点击后内嵌播放 mp4 直链视频 */
 function loadInlineVideo(btn,url){

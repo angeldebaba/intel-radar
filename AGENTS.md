@@ -166,7 +166,7 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 - `OFFICIAL_CONFIG`：**9 家**厂商官网新闻/方案页清单（VENDORS 有 12 家，部分厂商只走搜索引擎）
 - `fetch_official_page` → `_parse_structured_list` / `_parse_generic_links`：通用列表页解析
 - 搜索引擎：`fetch_sogou_web` / `fetch_bing` / `fetch_baidu_news`，每个引擎都有 `_engine_blocked` 节流（被反爬自动跳过）
-- `fetch_rss_source` / `fetch_all_rss`：行业媒体 RSS/Atom 直采（feedparser），按 `config.RSS_SOURCES` 关键词过滤；feed 完整正文存 `description` 供评分/AI 使用
+- `fetch_rss_source` / `fetch_all_rss`：行业媒体 RSS/Atom 直采（feedparser），按 `config.RSS_SOURCES` 关键词过滤；feed 完整正文存 `description` 供评分/AI 使用。**RSS 源仅保留国内（36氪、雷锋网）**——2026-08-29 曾加 6 个海外英文源，实测外文内容相关度偏低、噪音大，已回退
 - 注意请求头 `Accept-Encoding` 只声明 `gzip, deflate`（**不能加 `br`**）：requests 原生不解压 brotli，必应默认返回 br 会导致乱码、解析 0 条
 - `collect_once()`：主编排，五阶段顺序执行——A. 官网 → B. 厂商×关键词搜索 → C. 行业专项搜索 → D. 行业媒体/公众号品牌词搜索 → E. RSS 直采；全局按 URL 去重
 - `quality_verdict()`：内容质量门禁，不过的进 `quarantine` 表（不直接丢）
@@ -236,6 +236,7 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 |---|---|---|
 | GET | `/` | 首页（渲染 index.html） |
 | GET | `/article/<id>` | 存档原文查看页 |
+| GET | `/api/article/<id>/text` | 存档原文纯文本（卡片「展开原文」懒加载；无存档返回 `{ok:false}` 前端回退 description） |
 | GET | `/api/stats` | 首页统计数字（健康检查也用这个） |
 | GET | `/api/stats/trend` | 近 7 日趋势 |
 | GET | `/api/intelligence` | 情报列表（支持 vendor/industry/tag/keyword/排序） |

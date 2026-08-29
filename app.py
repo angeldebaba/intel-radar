@@ -394,6 +394,24 @@ body{{margin:0;background:#0d1117;color:#d6dee6;font-family:"PingFang SC","Micro
     return page
 
 
+@app.route('/api/article/<int:iid>/text')
+def api_article_text(iid):
+    """原文存档纯文本接口（供卡片「展开原文」就地展示真正全文）。
+    有存档返回 ok+text；无存档/文本为空返回 ok=false（前端回退到 description）。"""
+    try:
+        arch = database.get_archive(iid)
+        text = (arch or {}).get('plain_text') or ''
+        text = text.strip()
+        if not text:
+            return jsonify({'ok': False, 'msg': 'no_archive'})
+        # 截断保护：纯文本上限约 2 万字，足够阅读又避免超大响应
+        return jsonify({'ok': True, 'text': text[:20000],
+                        'truncated': len(text) > 20000,
+                        'fetched_at': (arch.get('fetched_at') or '')[:19]})
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': str(e)[:120]})
+
+
 # ==================== 公开 API ====================
 @app.route('/api/stats')
 def api_stats():
