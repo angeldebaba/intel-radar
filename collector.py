@@ -325,7 +325,10 @@ _REF_SKIP_HOSTS = ('sogou.com', 'baidu.com', 'bing.com', 'google.', 'so.com', '3
                    'gitee.com', 'youtube.com', 'facebook.com', 'twitter.com', 'x.com',
                    'w3.org', 'gov.cn', 'edu.cn', 'mil.cn', 'cdn-static-pages',
                    'weixinbridge.com', 'unpkg.com', 'jsdelivr.net', 'cdnjs.cloudflare.com',
-                   'bootcdn.net', 'staticfile.org')
+                   'bootcdn.net', 'staticfile.org',
+                   # 语义词汇表/命名空间站点：JSON-LD @context、OG/RDF 命名声明，
+                   # 永远不是含媒体的文章页（容器内还可能路由不通导致 Network unreachable）
+                   'schema.org', 'ogp.me', 'xmlns.com', 'purl.org', 'dublincore.org')
 # 静态资源后缀：这些"链接"是脚本/样式/字体，追了也没媒体
 _REF_SKIP_EXT = ('.js', '.css', '.json', '.woff', '.woff2', '.ttf', '.eot', '.svg',
                  '.ico', '.xml', '.txt', '.rss')
@@ -585,7 +588,13 @@ def _follow_referenced_media(item, article_html, base_url, timeout=6):
         for m in re.finditer(r'<a[^>]+href=["\']([^"\']+)["\']', article_html, re.I):
             _add(m.group(1))
     if article_html:
-        for m in re.finditer(r'https?://[\w.\-]+(?:/[\w.\-/%?=&#]*)?', article_html):
+        # 扫"正文裸 URL"前先剥掉 script/style/注释：
+        # JSON-LD（"@context":"https://schema.org"）、内联 JS 统计/CDN 地址都在 script 里，
+        # 剥掉能避免把命名空间/统计链接误当成正文提到的官网去追溯
+        scan_html = re.sub(r'<script[\s\S]*?</script>', ' ', article_html, flags=re.I)
+        scan_html = re.sub(r'<style[\s\S]*?</style>', ' ', scan_html, flags=re.I)
+        scan_html = re.sub(r'<!--[\s\S]*?-->', ' ', scan_html)
+        for m in re.finditer(r'https?://[\w.\-]+(?:/[\w.\-/%?=&#]*)?', scan_html):
             _add(m.group(0))
 
     if not cand:

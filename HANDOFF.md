@@ -32,6 +32,7 @@
    - **英文相关度支持**：`RELEVANCE_HIGH/MEDIUM/LOW` 加入 digital twin / smart city / iot / omniverse 等英文词；`score_relevance()` 重构权重（HIGH 命中即 3 分入库线，标题命中 +1），RSS 完整正文存入 `description` 供评分/AI 使用；RSS 日期改用 feedparser 结构化 `published_parsed`（国际 RFC822/ISO 更可靠）。
    - 沙箱实测（降级关键词评分口径）每天约 9 条可入库；生产环境 AI（glm-4-flash）打分召回率更高。
    - 说明：搜狗在云端机房 IP 被风控熔断属外部反爬，非代码 bug；必应修复后成为更稳的搜索补充源。
+   - **修复外链追溯误抓词汇表站点告警**：后台手动采集日志报 `请求失败(重试1次): https://schema.org | Network is unreachable`。根因是文章页 JSON-LD `<script type="application/ld+json">{"@context":"https://schema.org"}` 被"正文裸 URL"扫描误当成正文外链去抓取（schema.org 是语义词汇表站点、容器内路由不通，且永不含媒体）。修复：①`_REF_SKIP_HOSTS` 加入 schema.org/ogp.me/xmlns.com/purl.org/dublincore.org；②`_follow_referenced_media` 扫裸 URL 前先正则剥掉 script/style/注释。非致命告警（有 try/except 兜底），修复后省一次无效连接超时。
 1. **公开页「🌐 行业观察」全局看板** —— 新增 `industry_overview.py`，**行业研究视角**（与本站抓取数据解耦），含全球/中国市场规模、技术三次迁移、2026 核心技术突破、应用场景分布、中国区域格局、竞争格局（全球头部 + 中国第一梯队）、核心挑战与风险、未来 6 大趋势；数据来自信通院/IDC/Gartner/MarketsandMarkets 等公开报告并标注来源；打包在 `DEFAULT_OVERVIEW` 兜底，后台可通过 `POST /api/admin/industry-overview` 写入新版本覆盖；每晚采集任务结束后自动把内置快照落库一次（`config` 表 key=`industry_overview:YYYY-MM-DD`）；前端 hash 路由 `#industry`
 2. **「📋 每日关注」「📊 情报看板」收紧到后台** —— 公开页只保留情报流 + 「🌐 行业观察」；两个内部看板移到后台侧边栏 Tab，对应 `/api/daily-focus*`、`/api/hot-stats*` 全部加 `@require_admin`，未登录返回 401；历史 hash `#focus` / `#hot` 会自动检测登录态，已登录则跳到后台对应 Tab，未登录跳登录页
 3. **采集数据源扩充** —— RSS/Atom 直采（`feedparser`，`config.RSS_SOURCES`，2026-08-29 更新为 36氪/雷锋网 + 6 个海外数字孪生/智慧城市/IoT 源）；行业媒体与公众号品牌词搜索阶段（`INDUSTRY_MEDIA_QUERIES`）；`collect_once()` 五阶段（官网→厂商搜索→行业搜索→媒体/公众号搜索→RSS）
