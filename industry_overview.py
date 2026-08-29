@@ -11,10 +11,12 @@
 
 更新方式：
 1) 默认返回打包在仓库内的 JSON 快照（DEFAULT_OVERVIEW）；
-2) 若数据库 config 表存在 key=industry_overview:YYYY，优先返回该快照；
+2) 若数据库 config 表存在 key=industry_overview:YYYY-MM-DD，优先返回该快照；
 3) 后台可通过 POST /api/admin/industry-overview 写入新版快照；
-4) 每晚采集任务结束后，若配置了 AI_API_KEY，会尝试用 AI 基于
-   近期情报补充/校验快照中的 "watch_signals" 字段（行业观察信号）。
+4) 每晚采集任务结束后 generate_today() 都会生成「当天日期」的快照：
+   以最近一份快照（或内置默认）为底稿保留静态研究内容，
+   若配置了 AI_API_KEY 且近期有情报，会用 AI 基于近 7 天情报重写
+   "watch_signals"（今日行业观察信号）；AI 不可用/无情报时保留上一版信号。
 
 文件内数值尽量标注来源与年份；不同口径的数字同时呈现，
 不做盲目拼合，避免误导。
@@ -28,6 +30,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import database
+import config
 
 # ---------- 默认快照 ----------
 # 这是兜底数据；线上可通过后台写入新的快照覆盖
@@ -362,7 +365,7 @@ def save_snapshot(data: Dict[str, Any], date_str: Optional[str] = None) -> str:
     existing = database.query_one(f"SELECT value FROM config WHERE key = {database.PH}", (key,))
     if existing:
         database.execute(
-            f"UPDATE config SET value = {database.PH}, updated_at = CURRENT_TIMESTAMP WHERE key = {database.PH}",
+            f"UPDATE config SET value = {database.PH} WHERE key = {database.PH}",
             (payload, key),
         )
     else:
@@ -382,20 +385,102 @@ def list_snapshot_dates(limit: int = 30) -> List[str]:
     return [r["key"][prefix_len:] for r in rows if r.get("key")]
 
 
-def generate_today() -> Optional[str]:
-    """供 job_collect 每晚调用；目前只是把 DEFAULT 写入快照并补 generated_at。
-
-    若后续接 AI 重写，可在此扩展。
-    """
+def _recent_intel(days: int = 7, limit: int = 60) -> List[Dict[str, Any]]:
+    """读取近 N 天、相关度>=3 的情报标题+摘要，供 AI 提炼行业观察信号。"""
     try:
-        data = get_snapshot()
-        if data.get("_source") == "default_bundle":
-            # 默认快照首次落库，方便后台编辑
-            data.pop("_source", None)
-            data.pop("_date", None)
-            data["generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-            return save_snapshot(data)
-        return data.get("_date") or _today_str()
+        start = time.strftime('%Y-%m-%d', time.localtime(time.time() - days * 86400))
+        rows = database.query(
+            f'SELECT title, summary FROM intelligence WHERE date>={database.PH} AND relevance>={database.PH} ORDER BY relevance DESC, id DESC LIMIT {database.PH}',
+            (start, config.MIN_RELEVANCE if hasattr(config, 'MIN_RELEVANCE') else 3, limit),
+        )
+        out = []
+        for r in rows:
+            title = (r.get('title') or '').strip()
+            summ = (r.get('summary') or '').strip()
+            if title:
+                out.append({'title': title[:120], 'summary': summ[:220]})
+        return out
+    except Exception:
+        return []
+
+
+def build_watch_signals(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """基于近期情报，用 AI 提炼「今日行业观察信号」。
+    返回 signals 列表；未配置 AI / 无情报 / 调用失败时返回 None（调用方保留上一版）。"""
+    if not items:
+        return None
+    try:
+        import ai
+    except Exception:
+        return None
+    if not getattr(ai, 'enabled', lambda: False)():
+        return None
+
+    payload = json.dumps(items, ensure_ascii=False)
+    prompt = (
+        '下面是近 7 天数字孪生/视频融合/智慧城市/三维可视化行业的真实情报（标题+摘要）。'
+        '请基于这些情报提炼「行业观察信号」，总结当前值得关注的行业动态、技术突破、'
+        '市场与政策趋势。严格只依据给定情报中真实存在的信息，禁止编造数字、公司、事件。\n'
+        '输出 JSON 数组（不要 markdown 代码块），3~6 条，每条格式：\n'
+        '{"category":"政策/技术/市场/案例 之一","text":"一句话观察信号，40~90字，具体、有信息量"}。\n'
+        '去重合并同类事件，优先保留涉及数字孪生/视频孪生/三维可视化/智慧城市的高价值信号；'
+        'text 用通顺中文，可保留必要英文专有名词。'
+    )
+    try:
+        raw = ai._chat([
+            {'role': 'user',
+             'content': payload + '\n\n' + prompt},
+        ], timeout=90)
+        arr = ai._extract_json(raw)
+    except Exception as exc:
+        database.log('collect', '行业观察信号 AI 提炼失败，保留上一版信号: {}'.format(exc), 'warn')
+        return None
+
+    _CAT_WHITELIST = ('政策', '技术', '市场', '案例')
+    signals: List[Dict[str, Any]] = []
+    for obj in arr:
+        if not isinstance(obj, dict):
+            continue
+        cat = str(obj.get('category') or '动态').strip()
+        if cat not in _CAT_WHITELIST:
+            cat = '动态'
+        text = str(obj.get('text') or '').strip()
+        if len(text) < 8 or len(text) > 200:
+            continue
+        signals.append({'category': cat, 'text': text[:200]})
+        if len(signals) >= 6:
+            break
+    return signals or None
+
+
+def generate_today() -> Optional[str]:
+    """供 job_collect 每晚调用：生成「当天日期」的行业观察快照。
+
+    - 以最近一份快照（无则内置 DEFAULT_OVERVIEW）为底稿，保留静态研究内容；
+    - 若配置了 AI_API_KEY 且近 7 天有情报，用 AI 重写 watch_signals（行业观察信号）；
+      AI 不可用/无情报时保留上一版信号，静态内容不受影响。
+    返回当天日期字符串；失败返回 None。
+    """
+    today = _today_str()
+    try:
+        # 最近一份快照（去掉 get_snapshot 附加的 _date/_source 标记）
+        base = get_snapshot(today)
+        base.pop('_source', None)
+        base.pop('_date', None)
+
+        items = _recent_intel(days=7)
+        signals = build_watch_signals(items)
+        if signals:
+            base['watch_signals'] = signals
+            print('[industry_overview] 今日行业观察信号已由 AI 提炼：{} 条（基于近7天 {} 条情报）'.format(
+                len(signals), len(items)))
+        else:
+            print('[industry_overview] 本次未更新信号（AI 未配置/无近期情报/调用失败），保留上一版')
+
+        base['date'] = today
+        base['generated_at'] = time.strftime('%Y-%m-%dT%H:%M:%S')
+        save_snapshot(base, today)
+        return today
     except Exception as exc:
         print(f"[industry_overview] generate_today 失败：{exc}")
         return None

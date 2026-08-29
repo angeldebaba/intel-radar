@@ -25,7 +25,14 @@
 
 ## 三、最近完成的工作（按时间倒序，节选）
 
-0. **2026-08-29 采集源修复与扩充（针对"连续两晚 0 条"）**
+0. **2026-08-29 行业观察"每晚刷新"修复**
+   - **现象**：「🌐 行业观察」快照日期停在首次部署那天，之后每晚不刷新。
+   - **根因**：`industry_overview.generate_today()` 旧逻辑只有在一份快照都没有（返回内置默认包）时才落库，之后每晚 `get_snapshot()` 读得到旧快照就直接 return，**既不生成当天日期快照、也从不更新内容**；注释承诺的"AI 每晚更新 watch_signals"从未实现（字段一直空数组）。
+   - **修复**：重写 `generate_today()`——每晚以最近一份快照（无则内置默认）为底稿保留静态研究内容，新增 `_recent_intel(7天)` + `build_watch_signals()`：近 7 天相关度≥3 情报喂给 `ai._chat` 提炼 3~6 条 `{category:政策/技术/市场/案例, text}` 行业观察信号，写入当天快照；AI 未配置/无情报/调用失败时保留上一版信号、静态内容不受影响。
+   - **顺手修复一个潜在 BUG**：`save_snapshot()` 的 UPDATE 分支引用了 config 表不存在的 `updated_at` 列（config 表只有 key/value），同日期覆盖会报 `no such column: updated_at`——已移除该引用。
+   - 前端：`templates/index.html` 顶部新增 `.watch-banner`「今日行业观察信号」横幅（固定最上方、不参与拖拽排序），含信号卡片样式。
+   - 沙箱实测：每晚生成当天快照 ✅、同日覆盖 ✅、AI 信号生成与非法类目归一/空 text 过滤 ✅、无 AI 保留旧信号 ✅。
+1. **2026-08-29 采集源修复与扩充（针对"连续两晚 0 条"）**
    - **修复必应 0 条 BUG**：请求头 `Accept-Encoding` 声明了 `br`(brotli) 但环境未装 brotli 包，requests 返回未解压字节导致乱码、必应解析全 0；改为只声明 `gzip, deflate` 后必应恢复正常（实测解析出结果）。
    - **RSS 源失效处理**：实测确认中新网 scroll-news 是综合滚动频道（科技命中≈0）、人民网 scitech feed 停更（最新 2025-04，全被 30 天时效过滤）、新华网 tech feed 冻结在 2022。**这三个"官媒源"是导致 RSS 零产出的根因，不是正常过滤。**
    - **扩充 RSS 源（国内外共 8 个，全部实测可抓、日期新鲜）**：国内 36氪/雷锋网（带全文摘要）；海外 IoTAnalytics、IoTTechNews、SmartCitiesDive、NVIDIA Blog、Unity Blog、SyncedReview（机器之心英文站），英文关键词过滤，AI 摘要强制输出中文。

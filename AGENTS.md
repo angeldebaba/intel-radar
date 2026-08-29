@@ -205,12 +205,14 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 
 ### `industry_overview.py`
 
-- **行业全局观察**看板的数据源。和 `hot_stats` 不同，它**不基于本站抓取情报聚合**，而是打包一份结构化的行业研究快照（市场规模、技术三次迁移、核心技术突破、应用场景分布、中国区域格局、竞争格局、核心挑战、未来趋势）
+- **行业全局观察**看板的数据源。主体是一份打包的结构化行业研究快照（市场规模、技术三次迁移、核心技术突破、应用场景分布、中国区域格局、竞争格局、核心挑战、未来趋势，不每日变动）；顶部「今日行业观察信号」(`watch_signals`) 是**每晚基于近 7 天真实采集情报用 AI 提炼**的动态内容
 - `DEFAULT_OVERVIEW`：仓库内置兜底快照，数值标注来源与年份（信通院、IDC、Gartner、MarketsandMarkets、Grand View Research 等）；不同口径数字并列展示，不盲目合并
 - `get_snapshot(date=None)`：优先读数据库 `config` 表 key=`industry_overview:YYYY-MM-DD`；没有当日则取最近一份；再没有才返回内置默认
-- `save_snapshot(data, date=None)`：后台或 AI 写入新版快照（全量覆盖）
+- `save_snapshot(data, date=None)`：后台或 AI 写入新版快照（全量覆盖；config 表只有 key/value 两列，**UPDATE 不要引用 updated_at**）
 - `list_snapshot_dates(limit=30)`：列出有快照的日期
-- `generate_today()`：供 `job_collect` 每晚调用；首次启动时把内置快照落库，方便后台编辑
+- `_recent_intel(days=7)` / `build_watch_signals(items)`：取近 7 天相关度≥3 情报，调 `ai._chat` 提炼 3~6 条 `{category:政策/技术/市场/案例, text}` 信号；AI 未配置/无情报/失败返回 None
+- `generate_today()`：供 `job_collect` **每晚**调用——以最近一份快照为底稿保留静态研究内容，用 AI 重写 `watch_signals`（失败则保留上一版信号），并**生成当天日期的新快照**（不再只在首次落库）
+- 前端：`watch_signals` 渲染为 `#industryBody` 顶部 `.watch-banner`（固定、不参与拖拽排序）
 - `GET /api/industry-overview`（公开，`?date=YYYY-MM-DD` 可取历史）
 - `GET /api/industry-overview/dates`
 - `POST /api/admin/industry-overview`（**需 `@require_admin`**，body `{date?, data:{...}}`）

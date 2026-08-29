@@ -514,6 +514,22 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 .future-card .ft{font-size:14px;font-weight:700;color:var(--text);margin:6px 0;}
 .future-card .fd{font-size:12px;color:var(--text2);line-height:1.6;}
 
+/* 今日行业观察信号（AI 每晚基于近期情报提炼） */
+.watch-banner{margin-bottom:18px;border-radius:14px;padding:16px 18px;position:relative;overflow:hidden;
+  background:linear-gradient(150deg,rgba(88,166,255,.14),rgba(188,140,255,.10));
+  border:1px solid rgba(88,166,255,.35);}
+.watch-banner .wb-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.watch-banner .wb-head .ico{font-size:18px;}
+.watch-banner .wb-head h2{font-size:15px;font-weight:700;color:var(--text);margin:0;letter-spacing:.5px;}
+.watch-banner .wb-head .hint{font-size:11.5px;color:var(--text3);margin-left:auto;}
+.watch-grid{display:grid;grid-template-columns:1fr;gap:10px;}
+@media(min-width:720px){.watch-grid{grid-template-columns:1fr 1fr;}}
+.watch-item{display:flex;gap:10px;align-items:flex-start;background:rgba(12,20,36,.55);
+  border:1px solid var(--border);border-left:3px solid var(--c,#58a6ff);border-radius:10px;padding:10px 12px;}
+.watch-item .w-cat{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--c,#58a6ff);
+  border:1px solid var(--c,#58a6ff);border-radius:20px;padding:1px 9px;margin-top:1px;white-space:nowrap;}
+.watch-item .w-txt{font-size:12.5px;color:var(--text2);line-height:1.65;}
+
 .ind-footer{margin-top:24px;padding-top:16px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text3);line-height:1.7;}
 .ind-footer strong{color:var(--text2);font-weight:600;}
 </style>
@@ -1406,8 +1422,25 @@ function renderIndustry(d, meta){
   }
   var byKey={}; sections.forEach(function(s){byKey[s.key]=s.html;});
 
+  // 0. 今日行业观察信号（AI 每晚基于近期情报提炼，固定在最上方，不参与拖拽排序）
+  var watchHtml='';
+  var ws=d.watch_signals||[];
+  if(ws.length){
+    var wColor={'政策':'#f0a020','技术':'#58a6ff','市场':'#3fb950','案例':'#bc8cff','动态':'#db61a2'};
+    var wItems=ws.map(function(w){
+      var c=wColor[w.category]||'#58a6ff';
+      return '<div class="watch-item" style="--c:'+c+'">'
+        +'<span class="w-cat" style="--c:'+c+'">'+esc(w.category||'动态')+'</span>'
+        +'<div class="w-txt">'+esc(w.text||'')+'</div></div>';
+    }).join('');
+    watchHtml='<div class="watch-banner">'
+      +'<div class="wb-head"><span class="ico">📡</span><h2>今日行业观察信号</h2>'
+      +'<span class="hint">AI 基于近 7 天情报提炼 · 每晚采集后刷新</span></div>'
+      +'<div class="watch-grid">'+wItems+'</div></div>';
+  }
+
   var wrap=document.getElementById('industryBody');
-  wrap.innerHTML = order.map(function(k){
+  wrap.innerHTML = watchHtml + order.map(function(k){
     return '<section class="ind-section" data-key="'+esc(k)+'" draggable="true">'
       +'<div class="ind-drag-handle" title="拖拽调整顺序">⋮⋮</div>'
       + byKey[k]
