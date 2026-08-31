@@ -332,6 +332,13 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/industry')
+def industry_page():
+    """行业观察独立分享页（纯净模式）：直接打开即行业观察，
+    无顶部导航 / 返回 / 后台入口，便于对外分享。"""
+    return render_template('index.html', standalone_industry=True)
+
+
 @app.route('/favicon.ico')
 def favicon():
     return '', 204

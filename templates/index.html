@@ -15,6 +15,12 @@
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6;}
 a{color:var(--blue);text-decoration:none;}
 .hidden{display:none!important;}
+/* ===== 行业观察独立分享页（/industry，纯净模式） ===== */
+body.standalone-industry .topbar{display:none!important;}
+body.standalone-industry .container > #view-radar,
+body.standalone-industry .container > #view-admin-login,
+body.standalone-industry .container > #view-admin{display:none!important;}
+body.standalone-industry .container > #view-industry{display:block!important;}
 .container{max-width:1200px;margin:0 auto;padding:12px;}
 @media(min-width:768px){.container{padding:20px;}}
 
@@ -554,7 +560,7 @@ table.tbl tr:hover td{background:rgba(88,166,255,.04);}
 .ind-footer strong{color:var(--text2);font-weight:600;}
 </style>
 </head>
-<body>
+<body{% if standalone_industry %} class="standalone-industry"{% endif %}>
 <header class="topbar">
   <div class="topbar-inner">
     <div class="logo"><span class="icon">📡</span>行业情报雷达<small>数字孪生 · 视频融合</small></div>
@@ -865,6 +871,11 @@ function showView(v){
   window.scrollTo(0,0);
 }
 function initRoute(){
+  // 行业观察独立分享页（/industry）：直接渲染行业观察，不做视图/后台/返回切换
+  if(document.body.classList.contains('standalone-industry')){
+    loadIndustry();
+    return;
+  }
   var h = location.hash;
   // 已登录用户访问历史 hash（#hot）时，自动切到后台情报看板
   if(h==='#hot'){

@@ -218,6 +218,7 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 - `GET /api/industry-overview/dates`
 - `POST /api/admin/industry-overview`（**需 `@require_admin`**，body `{date?, data:{...}}`）
 - 前端入口：顶部导航「🌐 行业观察」，hash 路由 `#industry`，DOM 容器 `#view-industry` / `#industryBody`，渲染函数 `renderIndustry()`
+- **独立分享页 `/industry`**：`render_template('index.html', standalone_industry=True)` → `<body class="standalone-industry">`；CSS `body.standalone-industry .topbar{display:none!important;}` 隐藏顶部导航（含返回/后台入口），仅 `#view-industry` 显示；JS `initRoute()` 开头检测该 body class，直接 `loadIndustry();return;`，不做 hash 路由/视图切换
 
 ### 前端 `templates/index.html`
 
@@ -235,6 +236,7 @@ Windows 用户可双击 `run.bat`，但首次使用要把里面硬编码的 Pyth
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | GET | `/` | 首页（渲染 index.html） |
+| GET | `/industry` | 行业观察**独立分享页**（纯净模式：渲染 index.html 但 body 加 `standalone-industry`，CSS 隐藏整个 `.topbar`（含「← 返回」「⚙ 后台」），JS 跳过 hash 路由直接 `loadIndustry()`，只显示行业观察，适合对外分享） |
 | GET | `/article/<id>` | 存档原文查看页 |
 | GET | `/api/article/<id>/text` | 存档原文纯文本（卡片「展开原文」懒加载；无存档返回 `{ok:false}` 前端回退 description） |
 | GET | `/api/stats` | 首页统计数字（健康检查也用这个） |

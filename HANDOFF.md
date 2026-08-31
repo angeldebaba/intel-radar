@@ -25,6 +25,15 @@
 
 ## 三、最近完成的工作（按时间倒序，节选）
 
+0. **2026-08-31 行业观察「独立分享页」`/industry`（纯净模式，无返回/后台入口）**
+   - **需求**：给行业观察页面单独一个链接，打开即行业观察；页面上不要「← 返回」和「⚙ 后台」入口，便于对外分享。
+   - **实现**：
+     - `app.py` 新增路由 `GET /industry` → `render_template('index.html', standalone_industry=True)`（复用同一份 index.html，Jinja 变量控制）。
+     - `<body{% if standalone_industry %} class="standalone-industry"{% endif %}>`：仅独立页带该 class。
+     - CSS：`body.standalone-industry .topbar{display:none!important;}` 隐藏整个顶部导航（内含「🌐 行业观察/← 返回/⚙ 后台」），并把 `#view-radar/#view-admin-login/#view-admin` 强制隐藏、`#view-industry` 强制显示。
+     - JS：`initRoute()` 开头检测 `document.body.classList.contains('standalone-industry')`，命中则直接 `loadIndustry(); return;`，跳过 hash 路由与视图/后台切换。
+   - 首页 `/` 仍是 `<body>`（无 class），行为不变；独立页数据仍走公开接口 `/api/industry-overview`。
+   - 沙箱实测（flask test_client）：`/industry` 200 且 `<body class="standalone-industry">`、`/` 为 `<body>`；独立分支调 `loadIndustry` 命中；py_compile + node --check 通过。
 0. **2026-08-29 采集源回退国内 + 「展开原文」改为真正全文**
    - **采集源回退**：用户反馈接入海外英文 RSS 源后，最新几篇外文内容相关度都很低。已移除 6 个海外源（IoTAnalytics/IoTTechNews/SmartCitiesDive/NVIDIABlog/UnityBlog/SyncedReview），`RSS_SOURCES` 仅保留国内 **36氪 + 雷锋网**；`RELEVANCE_HIGH/MEDIUM/LOW` 里为海外源新增的宽泛英文词（iot/sensor/3d/robotics/smart city 等）一并回退，仅留 digital twin/omniverse 高精准英文专有词兜底。英文标题翻译、英文 AI 摘要等能力保留（不影响）。
    - **「展开原文」改造**：原先卡片「展开原文」展开的是 `description` 字段（RSS 条目≈全文，但搜索/官网条目只是约 200 字的搜索摘要 snippet，名不副实）。现改为：**有本地存档的条目（`has_archive`）点击「展开原文」走新接口 `GET /api/article/<id>/text` 懒加载 `article_archive.plain_text` 真正全文**（上限 2 万字、保留换行、独立滚动样式 `.archive-full`）；无存档/加载失败回退到 `description`。点标题仍是 `/article/<id>` 完整存档页。
